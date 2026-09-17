@@ -19,7 +19,6 @@ from lib.util.fs import iter_all_dir_files
 
 HANDLED_MODALITIES = ('MR', 'PT', 'CT')
 
-
 def get_dicom_study_summary(dicom_study_dir_path: str, verbose: bool):
     """
     Get information about a DICOM study by reading the files in the DICOM study directory.
