@@ -17,6 +17,9 @@ from lib.util.crypto import compute_file_md5_hash
 from lib.util.fs import iter_all_dir_files
 
 
+HANDLED_MODALITIES = ('MR', 'PT', 'CT')
+
+
 def get_dicom_study_summary(dicom_study_dir_path: str, verbose: bool):
     """
     Get information about a DICOM study by reading the files in the DICOM study directory.
@@ -43,7 +46,7 @@ def get_dicom_study_summary(dicom_study_dir_path: str, verbose: bool):
                 print(f"Found no modality for DICOM file '{file_rel_path}'.")
                 raise pydicom.errors.InvalidDicomError
 
-            if modality != 'MR' and modality != 'PT':
+            if modality not in HANDLED_MODALITIES:
                 print(f"Found unhandled modality '{modality}' for DICOM file '{file_rel_path}'.")
                 raise pydicom.errors.InvalidDicomError
 
