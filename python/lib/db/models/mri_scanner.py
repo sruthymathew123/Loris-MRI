@@ -13,6 +13,9 @@ class DbMriScanner(Base):
     model            : Mapped[str | None] = mapped_column('Model')
     serial_number    : Mapped[str | None] = mapped_column('Serial_number')
     software_version : Mapped[str | None] = mapped_column('Software')
+    # C-BIG OVERRIDE START
+    # Remove when updating to LORIS 27
     cand_id          : Mapped[int | None] = mapped_column('CandID', ForeignKey('candidate.CandID'))
+    # C-BIG OVERRIDE END
 
     candidate : Mapped['db_candidate.DbCandidate'] = relationship('DbCandidate')

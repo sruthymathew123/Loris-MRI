@@ -1,11 +1,13 @@
 """This class performs database queries for the mri_scanner table"""
 
 import datetime
+
+from typing_extensions import deprecated
+
 from lib.candidate import Candidate
 
-__license__ = "GPLv3"
 
-
+@deprecated('Use `lib.scanner` instead')
 class MriScanner:
     """
     This class performs database queries for imaging dataset stored in the mri_scanner table.
@@ -37,6 +39,7 @@ class MriScanner:
         self.db = db
         self.verbose = verbose
 
+    @deprecated('Use `lib.scanner.get_or_create_scanner` instead')
     def determine_scanner_information(self, manufacturer, software_version, serial_number, scanner_model,
                                       center_id, project_id):
         """
@@ -80,6 +83,7 @@ class MriScanner:
         )
         return scanner_id
 
+    @deprecated('Use `lib.scanner.get_or_create_scanner` instead')
     def register_new_scanner(self, manufacturer, software_version, serial_number, scanner_model, center_id, project_id):
         """
         Inserts a new entry in the mri_scanner table after having created a new candidate to
@@ -113,8 +117,16 @@ class MriScanner:
             new_cand_id,  'scanner', center_id,  datetime.datetime.now(),
             'imaging.py', 'Scanner', project_id, datetime.datetime.now()
         )
-        self.db.insert(table_name='candidate', column_names=column_names, values=values)
 
+        self.db.insert(
+            table_name='candidate',
+            column_names=column_names,
+            values=values,
+            get_last_id=True,
+        )
+
+        # C-BIG OVERRIDE START
+        # Remove when updating to LORIS 27
         # create the new scanner ID
         scanner_id = self.db.insert(
             table_name='mri_scanner',
@@ -122,9 +134,11 @@ class MriScanner:
             values=(manufacturer, scanner_model, serial_number, software_version, new_cand_id),
             get_last_id=True
         )
+        # C-BIG OVERRIDE END
 
         return scanner_id
 
+    @deprecated('Use `lib.db.models.mri_scanner.DbMriScanner.candidate` instead')
     def get_scanner_candid(self, scanner_id):
         """
         Select a ScannerID CandID based on the scanner ID in mri_scanner.
@@ -135,6 +149,14 @@ class MriScanner:
         :return: scanner CandID
          :rtype: int
         """
-        query = 'SELECT CandID FROM mri_scanner WHERE ID = %s'
+        # C-BIG OVERRIDE START
+        # Remove when updating to LORIS 27
+        query = '''
+        SELECT CandID
+        FROM mri_scanner
+            JOIN candidate ON (candidate.CandID=mri_scanner.CandID)
+        WHERE ID = %s
+        '''
+        # C-BIG OVERRIDE END
         results = self.db.pselect(query=query, args=(scanner_id,))
         return results[0]['CandID'] if results else None

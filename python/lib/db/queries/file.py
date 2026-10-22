@@ -1,4 +1,6 @@
-from sqlalchemy import select
+from pathlib import Path
+
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as Database
 
 from lib.db.models.file import DbFile
@@ -26,14 +28,25 @@ def try_get_file_with_unique_combination(
     ).scalar_one_or_none()
 
 
-def try_get_file_with_rel_path(db: Database, rel_path: str) -> DbFile | None:
+def try_get_file_with_id(db: Database, id: int) -> DbFile | None:
     """
-    Get an imaging file from the database using its relative path, or return `None` if no imaging
-    file is found.
+    Get an imaging file from the database using its ID, or return `None` if no imaging file is
+    found.
     """
 
     return db.execute(select(DbFile)
-        .where(DbFile.rel_path == rel_path)
+        .where(DbFile.id == id)
+    ).scalar_one_or_none()
+
+
+def try_get_file_with_path(db: Database, path: Path) -> DbFile | None:
+    """
+    Get an imaging file from the database using its path, or return `None` if no imaging file is
+    found.
+    """
+
+    return db.execute(select(DbFile)
+        .where(DbFile.path == path)
     ).scalar_one_or_none()
 
 
@@ -49,3 +62,12 @@ def try_get_file_with_hash(db: Database, file_hash: str) -> DbFile | None:
         .where(DbParameterType.name.in_(['file_blake2b_hash', 'md5hash']))
         .where(DbFileParameter.value == file_hash)
     ).scalar_one_or_none()
+
+
+def delete_file(db: Database, file_id: int):
+    """
+    Delete from the database a file entry based on a file ID.
+    """
+
+    db.execute(delete(DbFile)
+       .where(DbFile.id == file_id))

@@ -1,11 +1,10 @@
 import os.path
 import shutil
 from os.path import basename
+from pathlib import Path
 
-from lib.db.queries.file import (
-    try_get_file_with_unique_combination,
-    try_get_parameter_value_with_file_id_parameter_name,
-)
+from lib.db.queries.file import try_get_file_with_unique_combination
+from lib.db.queries.file_parameter import try_get_parameter_value_with_file_id_parameter_name
 from lib.db.queries.mri_protocol_violated_scan import get_protocol_violated_scans_with_unique_series_combination
 from lib.db.queries.mri_upload import get_mri_upload_with_patient_name
 from lib.db.queries.mri_violation_log import get_violations_log_with_unique_series_combination
@@ -20,7 +19,7 @@ from lib.exitcode import (
     UNKNOWN_PROTOCOL,
 )
 from tests.util.database import get_integration_database_session
-from tests.util.file_system import check_file_tree
+from tests.util.file_system import assert_files_exist
 from tests.util.run_integration_script import run_integration_script
 
 
@@ -31,7 +30,6 @@ def test_invalid_arg():
 
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--invalid_arg',
     ])
 
@@ -49,7 +47,6 @@ def test_missing_nifti_path_argument():
     # Run the script to test
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
     ])
 
     # Check return code, STDOUT and STDERR
@@ -68,7 +65,6 @@ def test_invalid_nifti_path():
     # Run the script to test
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
     ])
 
@@ -90,7 +86,6 @@ def test_missing_upload_id_or_tarchive_path():
     # Run the script to test
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
     ])
 
@@ -114,7 +109,6 @@ def test_missing_json_path():
     # Run the script to test
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
         '--upload_id', upload_id,
     ])
@@ -139,7 +133,6 @@ def test_invalid_json_path():
     # Run the script to test
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
         '--upload_id', upload_id,
         '--json_path', json_path,
@@ -164,7 +157,6 @@ def test_invalid_upload_id():
     # Run the script to test
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
         '--upload_id', upload_id,
         '--json_path', json_path,
@@ -189,7 +181,6 @@ def test_invalid_tarchive_path():
     # Run the script to test
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
         '--tarchive_path', tarchive_path,
         '--json_path', json_path,
@@ -204,7 +195,8 @@ def test_invalid_tarchive_path():
 
 def test_tarchive_path_and_upload_id_provided():
     """
-    Test that tarchive path and upload ID are not provided to the script as argument. Only one of them must be set.
+    Test that tarchive path and upload ID are not provided to the script as argument. Only one of
+    them must be set.
     """
 
     nifti_path = '/data/loris/incoming/niftis/ROM184_400184_V3_t1_valid.nii.gz'
@@ -215,7 +207,6 @@ def test_tarchive_path_and_upload_id_provided():
     # Run the script to test
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
         '--tarchive_path', tarchive_path,
         '--upload_id', upload_id,
@@ -233,7 +224,8 @@ def test_tarchive_path_and_upload_id_provided():
 
 def test_nifti_and_tarchive_patient_name_differ():
     """
-    Test a NIfTI file where the patient name is not matching the patient name stored in the associated DICOM headers.
+    Test a NIfTI file where the patient name is not matching the patient name stored in the
+    associated DICOM headers.
     """
 
     nifti_path = '/data/loris/incoming/niftis/ROM184_400184_V3_t2_invalid_pname.nii.gz'
@@ -243,7 +235,6 @@ def test_nifti_and_tarchive_patient_name_differ():
     # Run the script to test
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
         '--upload_id', upload_id,
         '--json_path', json_path,
@@ -269,7 +260,6 @@ def test_nifti_already_inserted():
     # Run the script to test
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
         '--upload_id', upload_id,
         '--json_path', json_path,
@@ -287,10 +277,13 @@ def test_nifti_already_inserted():
 def test_nifti_mri_protocol_violated_scans_features():
     """
     Test the following NIfTI protocol violated scan features:
-    - provide a scan with no matching protocol and check that it gets inserted in the violated scan table
-    - re-run the script on the same scan and check that no duplicated entries has been saved in the violated scan table
-    - re-run the script on the same scan with specification of the scan type as an argument to the script and check
-      that it got inserted into the files table (in addition, test not creating the pic for the scan and make sure
+    - provide a scan with no matching protocol and check that it gets inserted in the violated scan
+      table
+    - re-run the script on the same scan and check that no duplicated entries has been saved in the
+      violated scan table
+    - re-run the script on the same scan with specification of the scan type as an argument to the
+      script and check that it got inserted into the files table (in addition, test not creating the
+    pic for the scan and make sure
       it is not generated)
     """
     db = get_integration_database_session()
@@ -306,7 +299,6 @@ def test_nifti_mri_protocol_violated_scans_features():
     # Run the script to test
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
         '--upload_id', upload_id,
         '--json_path', json_path,
@@ -334,18 +326,17 @@ def test_nifti_mri_protocol_violated_scans_features():
     violated_scan_entry = violated_scans[0]
 
     # Check that the NIfTI file can be found on the disk
-    assert violated_scan_entry.file_rel_path is not None
-    assert os.path.exists(os.path.join('/data/loris/', violated_scan_entry.file_rel_path))
+    assert violated_scan_entry.file_path is not None
+    assert os.path.exists(os.path.join('/data/loris/', violated_scan_entry.file_path))
 
     # Rerun the script to test that it did not duplicate the entry in MRI protocol violated scans
     # Note: need to copy the violated file into incoming to rerun the script
-    new_nifti_path = os.path.join('/data/loris/', violated_scan_entry.file_rel_path)
+    new_nifti_path = os.path.join('/data/loris/', violated_scan_entry.file_path)
     new_json_path = new_nifti_path.replace('.nii.gz', '.json')
     shutil.copyfile(new_nifti_path, nifti_path)
     shutil.copyfile(new_json_path, json_path)
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
         '--upload_id', upload_id,
         '--json_path', json_path,
@@ -372,7 +363,6 @@ def test_nifti_mri_protocol_violated_scans_features():
     shutil.copyfile(new_json_path, json_path)
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
         '--upload_id', upload_id,
         '--json_path', json_path,
@@ -398,18 +388,18 @@ def test_nifti_mri_protocol_violated_scans_features():
 
     # Check that all files related to that image have been properly linked in the database
     file_base_rel_path = 'assembly_bids/sub-400184/ses-V3/anat/sub-400184_ses-V3_run-1_T1w'
-    assert file.rel_path == f'{file_base_rel_path}.nii.gz'
+    assert file.path == Path(f'{file_base_rel_path}.nii.gz')
     file_json_data = try_get_parameter_value_with_file_id_parameter_name(db, file.id, 'bids_json_file')
     file_pic_data = try_get_parameter_value_with_file_id_parameter_name(db, file.id, 'check_pic_filename')
     assert file_json_data is not None and file_json_data.value == f'{file_base_rel_path}.json'
     assert file_pic_data is None
 
-    assert check_file_tree('/data/loris/', {
+    assert_files_exist('/data/loris', {
         'assembly_bids': {
             'sub-400184': {
                 'ses-V3': {
                     'anat': {
-                        basename(file.rel_path): None,
+                        basename(file.path): None,
                         basename(str(file_json_data.value)): None,
                     }
                 }
@@ -421,11 +411,13 @@ def test_nifti_mri_protocol_violated_scans_features():
 def test_nifti_mri_violations_log_exclude_features():
     """
     Test the following NIfTI violations exclusion features:
-    - provide a scan with exclusionary violation checks and check that it gets inserted in the violations log table
-    - re-run the script on the same scan and check that no duplicated entries has been saved in the violations log table
-    - re-run the script on the same scan with option to bypass the extra checks and check that the file got inserted
-      in the files table (in addition, test not creating the pic for the scan and make sure
-      it is not generated)
+    - provide a scan with exclusionary violation checks and check that it gets inserted in the
+      violations log table
+    - re-run the script on the same scan and check that no duplicated entries has been saved in the
+      violations log table
+    - re-run the script on the same scan with option to bypass the extra checks and check that the
+      file got inserted in the files table (in addition, test not creating the pic for the scan and
+      make sure it is not generated)
     """
     db = get_integration_database_session()
 
@@ -448,17 +440,14 @@ def test_nifti_mri_violations_log_exclude_features():
     upload_id = '128'
 
     # Run the script to test
-    process = run_integration_script(
-        [
-            'run_nifti_insertion.py',
-            '--profile', 'database_config.py',
-            '--nifti_path', nifti_path,
-            '--upload_id', upload_id,
-            '--json_path', json_path,
-            '--bval_path', bval_path,
-            '--bvec_path', bvec_path
-        ]
-    )
+    process = run_integration_script([
+        'run_nifti_insertion.py',
+        '--nifti_path', nifti_path,
+        '--upload_id', upload_id,
+        '--json_path', json_path,
+        '--bval_path', bval_path,
+        '--bvec_path', bvec_path
+    ])
 
     # Check return code, STDOUT and STDERR
     expected_stderr = f"ERROR: {nifti_path} violates exclusionary checks listed in mri_protocol_checks." \
@@ -476,19 +465,20 @@ def test_nifti_mri_violations_log_exclude_features():
         echo_number,
         phase_encoding_direction
     )
-    # Check that the NIfTI file was not inserted in files table (original file + violated scan force-inserted above)
+    # Check that the NIfTI file was not inserted in files table (original file + violated scan
+    # force-inserted above)
     assert mri_upload.session and len(mri_upload.session.files) == 2
-    # Check that the NIfTI file got inserted in the mri_protocol_violated_scans table and the attached file
-    # can be found on the disk
+    # Check that the NIfTI file got inserted in the mri_protocol_violated_scans table and the
+    # attached file can be found on the disk
     assert len(violations) == 1
     violation_entry = violations[0]
-    assert violation_entry.file_rel_path is not None
+    assert violation_entry.file_path is not None
     assert violation_entry.severity == 'exclude'
 
     # Check that the NIfTI file can be found in the filesystem
-    assert os.path.exists(os.path.join('/data/loris/', violation_entry.file_rel_path))
+    assert os.path.exists(os.path.join('/data/loris/', violation_entry.file_path))
     # Check that the rest of the expected files have been created
-    new_nifti_path = os.path.join('/data/loris/', violation_entry.file_rel_path)
+    new_nifti_path = os.path.join('/data/loris/', violation_entry.file_path)
     new_json_path = new_nifti_path.replace('.nii.gz', '.json')
     new_bval_path = new_nifti_path.replace('.nii.gz', '.bval')
     new_bvec_path = new_nifti_path.replace('.nii.gz', '.bvec')
@@ -504,7 +494,6 @@ def test_nifti_mri_violations_log_exclude_features():
     shutil.copyfile(new_bvec_path, bvec_path)
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
         '--upload_id', upload_id,
         '--json_path', json_path,
@@ -534,7 +523,6 @@ def test_nifti_mri_violations_log_exclude_features():
     shutil.copyfile(new_bvec_path, bvec_path)
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
         '--upload_id', upload_id,
         '--json_path', json_path,
@@ -560,7 +548,7 @@ def test_nifti_mri_violations_log_exclude_features():
 
     # Check that all files related to that image have been properly linked in the database
     file_base_rel_path = 'assembly_bids/sub-400184/ses-V3/dwi/sub-400184_ses-V3_acq-65dir_run-1_dwi'
-    assert file.rel_path == f'{file_base_rel_path}.nii.gz'
+    assert file.path == Path(f'{file_base_rel_path}.nii.gz')
     file_json_data = try_get_parameter_value_with_file_id_parameter_name(db, file.id, 'bids_json_file')
     file_bval_data = try_get_parameter_value_with_file_id_parameter_name(db, file.id, 'check_bval_filename')
     file_bvec_data = try_get_parameter_value_with_file_id_parameter_name(db, file.id, 'check_bvec_filename')
@@ -570,12 +558,12 @@ def test_nifti_mri_violations_log_exclude_features():
     assert file_bvec_data is not None and file_bvec_data.value == f'{file_base_rel_path}.bvec'
     assert file_pic_data is None
 
-    assert check_file_tree('/data/loris/', {
+    assert_files_exist('/data/loris', {
         'assembly_bids': {
             'sub-400184': {
                 'ses-V3': {
                     'dwi': {
-                        basename(file.rel_path): None,
+                        basename(file.path): None,
                         basename(str(file_bval_data.value)): None,
                         basename(str(file_bvec_data.value)): None,
                         basename(str(file_json_data.value)): None,
@@ -605,7 +593,6 @@ def test_dwi_insertion_with_mri_violations_log_warning():
     # Run the script to test
     process = run_integration_script([
         'run_nifti_insertion.py',
-        '--profile', 'database_config.py',
         '--nifti_path', nifti_path,
         '--upload_id', upload_id,
         '--json_path', json_path,
@@ -639,14 +626,14 @@ def test_dwi_insertion_with_mri_violations_log_warning():
     assert file is not None
     assert len(violations) == 1
     violation_entry = violations[0]
-    assert violation_entry.file_rel_path is not None
+    assert violation_entry.file_path is not None
     assert violation_entry.severity == 'warning'
 
     # Check that all files related to that image have been properly linked in the database
     file_base_rel_path = 'assembly_bids/sub-400184/ses-V3/dwi/sub-400184_ses-V3_acq-25dir_run-1_dwi'
-    assert violation_entry.file_rel_path \
-           == file.rel_path \
-           == f'{file_base_rel_path}.nii.gz'
+    assert violation_entry.file_path \
+           == file.path \
+           == Path(f'{file_base_rel_path}.nii.gz')
     file_json_data = try_get_parameter_value_with_file_id_parameter_name(db, file.id, 'bids_json_file')
     file_bval_data = try_get_parameter_value_with_file_id_parameter_name(db, file.id, 'check_bval_filename')
     file_bvec_data = try_get_parameter_value_with_file_id_parameter_name(db, file.id, 'check_bvec_filename')
@@ -656,12 +643,12 @@ def test_dwi_insertion_with_mri_violations_log_warning():
     assert file_bvec_data is not None and file_bvec_data.value == f'{file_base_rel_path}.bvec'
     assert file_pic_data is not None
 
-    assert check_file_tree('/data/loris/', {
+    assert_files_exist('/data/loris', {
         'assembly_bids': {
             'sub-400184': {
                 'ses-V3': {
                     'dwi': {
-                        basename(file.rel_path): None,
+                        basename(file.path): None,
                         basename(str(file_bval_data.value)): None,
                         basename(str(file_bvec_data.value)): None,
                         basename(str(file_json_data.value)): None,

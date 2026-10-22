@@ -1,17 +1,17 @@
 import os
 import shutil
+from pathlib import Path
 
 import lib.exitcode
-import lib.utilities
 from lib.config import get_data_dir_path_config, get_dicom_archive_dir_path_config
 from lib.database import Database
 from lib.database_lib.config import Config
-from lib.db.queries.dicom_archive import try_get_dicom_archive_with_archive_location
+from lib.db.queries.dicom_archive import try_get_dicom_archive_with_archive_path
 from lib.db.queries.mri_upload import try_get_mri_upload_with_id
 from lib.get_session_info import SessionConfigError, get_dicom_archive_session_info
 from lib.imaging import Imaging
 from lib.logging import log_error_exit, log_verbose, log_warning
-from lib.make_env import make_env
+from lib.lorisgetopt import LorisGetOpt
 
 
 class BasePipeline:
@@ -19,7 +19,7 @@ class BasePipeline:
     Series of checks done by most scripts of the dcm2bids imaging pipeline.
     """
 
-    def __init__(self, loris_getopt_obj, script_name):
+    def __init__(self, loris_getopt_obj: LorisGetOpt, script_name):
         """
         This initialize runs all the base functions that are always run by the following scripts:
         - nifti_insertion.py
@@ -60,28 +60,28 @@ class BasePipeline:
         self.imaging_obj = Imaging(self.db, self.verbose, self.config_file)
         self.config_db_obj = Config(self.db, self.verbose)
 
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         # Create tmp dir and log file (their basename being the name of the script run)
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         self.tmp_dir = self.loris_getopt_obj.tmp_dir
-        self.env = make_env(self.loris_getopt_obj)
+        self.env = self.loris_getopt_obj.env
         self.env.add_cleanup(self.remove_tmp_dir)
 
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         # Grep config settings from the config module
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         self.data_dir = get_data_dir_path_config(self.env)
         self.dicom_lib_dir = get_dicom_archive_dir_path_config(self.env)
 
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         # Load imaging_upload and tarchive dictionary
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         self.load_mri_upload_and_dicom_archive()
 
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         # Set Inserting field of mri_upload to indicate a script is running on the upload
         # and load the notification object
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         # Update the MRI upload.
         self.mri_upload.inserting = True
         self.env.db.commit()
@@ -150,7 +150,7 @@ class BasePipeline:
                 )
 
             self.dicom_archive = self.mri_upload.dicom_archive
-            if os.path.join(self.data_dir, 'tarchive', self.dicom_archive.archive_location) != tarchive_path:
+            if os.path.join(self.data_dir, 'tarchive', self.dicom_archive.path) != tarchive_path:
                 log_error_exit(
                     self.env,
                     f"UploadID {upload_id} and ArchiveLocation {tarchive_path} do not refer to the same upload",
@@ -178,7 +178,7 @@ class BasePipeline:
 
         elif tarchive_path:
             archive_location = os.path.relpath(tarchive_path, self.dicom_lib_dir)
-            dicom_archive = try_get_dicom_archive_with_archive_location(self.env.db, archive_location)
+            dicom_archive = try_get_dicom_archive_with_archive_path(self.env.db, Path(archive_location))
             if dicom_archive is None:
                 log_error_exit(
                     self.env,
@@ -210,10 +210,11 @@ class BasePipeline:
 
     def check_if_tarchive_validated_in_db(self):
         """
-        Checks whether the DICOM archive was previously validated in the database (as per the value present
-        in the <IsTarchiveValidated> field of the <mri_upload> table.
+        Checks whether the DICOM archive was previously validated in the database (as per the value
+        present in the <IsTarchiveValidated> field of the <mri_upload> table.
 
-        If the DICOM archive was not validated, the pipeline will exit and log the proper error information.
+        If the DICOM archive was not validated, the pipeline will exit and log the proper error
+        information.
         """
         # reload the mri_upload object with updated database values
         self.load_mri_upload_and_dicom_archive()

@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Engine
@@ -37,7 +38,8 @@ class Env:
     db: Session
     script_name: str
     config_info: Any
-    log_file: str
+    tmp_dir_path: Path
+    log_file_path: Path
     verbose: bool
     cleanups: list[Callable[[], None]]
     notifier: Notifier | None = None
@@ -71,8 +73,7 @@ class Env:
         notification_type = try_get_notification_type_with_name(notification_db, notification_type_name)
         if notification_type is None:
             notification_type = DbNotificationType(
-                name    = notification_type_name,
-                private = False,
+                name = notification_type_name,
             )
 
             notification_db.add(notification_type)

@@ -1,13 +1,15 @@
 """This class performs files/param_file related database queries and common checks"""
 
+from typing_extensions import deprecated
+
 from lib.database_lib.parameter_type import ParameterType
 
-__license__ = "GPLv3"
 
-
+@deprecated('Use `lib.db.models.file.DbFile` instead.')
 class Files:
     """
-    This class performs database queries for imaging dataset stored in the files tables (MRI, PET...).
+    This class performs database queries for imaging dataset stored in the files tables
+    (MRI, PET...).
 
     :Example:
 
@@ -74,6 +76,7 @@ class Files:
 
         return results[0] if results else None
 
+    @deprecated('Use `lib.db.queries.try_get_file_with_hash` instead.')
     def find_file_with_hash(self, file_hash):
         """
         Select files stored in the `files` table with a given hash stored in `parameter_file`.
@@ -97,6 +100,7 @@ class Files:
 
         return results[0] if results else None
 
+    @deprecated('Use `lib.db.models.file.DbFile` instead.')
     def insert_files(self, field_value_dict):
         """
         Inserts into the `files` table a new row with file information.
@@ -115,6 +119,7 @@ class Files:
             get_last_id=True
         )
 
+    @deprecated('Use `lib.db.models.file.DbFile` instead.')
     def update_files(self, file_id, fields, values):
         """
         Inserts into the `files` table a new row with file information.
@@ -133,7 +138,7 @@ class Files:
 
         query += ' WHERE FileID = %s'
 
-        args = values + (file_id,)
+        args = (*values, file_id)
 
         self.db.update(query=query, args=args)
 
@@ -142,19 +147,23 @@ class Files:
         Get a list of distinct scan types (a.k.a. `AcquisitionProtocolID`) inserted into the `files`
         table for a given DICOM archive (a.k.a. `TarchiveSource`).
 
-        :param tarchive_id: `TarchiveID` to use as the `TarchiveSource` to restrict the SELECT statement on
+        :param tarchive_id: `TarchiveID` to use as the `TarchiveSource` to restrict the SELECT
+                             statement on
          :type tarchive_id: int
 
         :return: list of scan types found (`AcquisitionProtocolID`)
          :rtype: list
         """
 
+        # C-BIG OVERRIDE START
+        # Remove when updating to LORIS 27
         query = "SELECT DISTINCT AcquisitionProtocolID FROM files WHERE TarchiveSource = %s"
 
         results = self.db.pselect(query=query, args=(tarchive_id,))
         acquisition_protocol_id_list = [v["AcquisitionProtocolID"] for v in results]
 
         return acquisition_protocol_id_list
+        # C-BIG OVERRIDE END
 
     def get_file_ids_and_series_number_per_scan_type_and_tarchive_id(self, tarchive_id, scan_type_id):
         """
@@ -166,18 +175,23 @@ class Files:
         :param scan_type_id: ID of the scan type to restrict the query on
          :type scan_type_id: int
 
-        :return: list of `FileID` and `SeriesNumber` for a given `TarchiveID` and `AcquisitionProtocolID`
+        :return: list of `FileID` and `SeriesNumber` for a given `TarchiveID` and
+                 `AcquisitionProtocolID`
          :rtype: list
         """
 
+        # C-BIG OVERRIDE START
+        # Remove when updating to LORIS 27
         query = "SELECT FileID, Value AS SeriesNumber " \
                 "FROM files " \
                 "  JOIN parameter_file USING(FileID) " \
                 "  JOIN parameter_type USING(ParameterTypeID) " \
                 "WHERE TarchiveSource = %s AND AcquisitionProtocolID = %s AND Name = %s"
+        # C-BIG OVERRIDE END
 
         return self.db.pselect(query=query, args=(tarchive_id, scan_type_id, "series_number"))
 
+    @deprecated('Use `lib.db.models.dicom_archive.DbDicomArchive.mri_files` instead.')
     def get_files_inserted_for_tarchive_id(self, tarchive_id):
         """
         Get the list of files that were inserted into the `files` table for a given `TarchiveID`.
@@ -185,7 +199,8 @@ class Files:
         :param tarchive_id: `TarchiveID` to restrict the query on
          :type tarchive_id: int
 
-        :return: list of relative file path present in the `files` table associated to the `TarchiveID`
+        :return: list of relative file path present in the `files` table associated to the
+                 `TarchiveID`
          :rtype: list
         """
 
@@ -193,6 +208,7 @@ class Files:
 
         return self.db.pselect(query=query, args=(tarchive_id,))
 
+    @deprecated('Use `lib.db.models.session.DbSession.files` instead.')
     def get_files_inserted_for_session_id(self, session_id):
         """
         Get the list of files that were inserted into the `files` table for a given `SessionID`.
@@ -200,7 +216,8 @@ class Files:
         :param session_id: `SessionID` to restrict the query on
          :type session_id: int
 
-        :return: list of relative file path present in the `files` table associated to the `SessionID`
+        :return: list of relative file path present in the `files` table associated to the
+                 `SessionID`
          :rtype: list
         """
 

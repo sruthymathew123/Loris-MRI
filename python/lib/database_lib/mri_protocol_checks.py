@@ -1,12 +1,10 @@
 """This class performs database queries for the mri_protocol_checks tables"""
 
 
-__license__ = "GPLv3"
-
-
 class MriProtocolChecks:
     """
-    This class performs database queries for imaging dataset stored in the mri_protocol_checks table.
+    This class performs database queries for imaging dataset stored in the mri_protocol_checks
+    table.
 
     :Example:
 
@@ -54,9 +52,12 @@ class MriProtocolChecks:
          :rtype: list
         """
 
+        # C-BIG OVERRIDE START
+        # Remove when updating to LORIS 27
         query = "SELECT * FROM mri_protocol_checks" \
                 " JOIN mri_protocol_checks_group_target mpcgt USING (MriProtocolChecksGroupID)" \
                 " WHERE Scan_type = %s "
+        # C-BIG OVERRIDE END
 
         query += " AND (mpcgt.ProjectID IS NULL OR mpcgt.ProjectID = %s)" \
             if project_id else " AND mpcgt.ProjectID IS NULL"

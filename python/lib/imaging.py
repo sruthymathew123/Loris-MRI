@@ -1,14 +1,15 @@
 """This class performs database queries and common imaging checks (MRI...)"""
 
-import os
 import datetime
 import json
-import lib.utilities as utilities
-import nibabel as nib
+import os
 import re
 import tarfile
 
+import nibabel as nib
+from loris_utils.crypto import compute_file_blake2b_hash
 from nilearn import image, plotting
+from typing_extensions import deprecated
 
 from lib.database_lib.config import Config
 from lib.database_lib.files import Files
@@ -21,8 +22,6 @@ from lib.database_lib.mri_scanner import MriScanner
 from lib.database_lib.mri_violations_log import MriViolationsLog
 from lib.database_lib.parameter_file import ParameterFile
 from lib.database_lib.parameter_type import ParameterType
-
-__license__ = "GPLv3"
 
 
 class Imaging:
@@ -76,6 +75,7 @@ class Imaging:
         self.param_type_db_obj = ParameterType(db, verbose)
         self.param_file_db_obj = ParameterFile(db, verbose)
 
+    @deprecated('Use `loris_bids_importer.file_type.get_check_bids_imaging_file_type_from_extension` instead.')
     def determine_file_type(self, file):
         """
         Greps all file types defined in the ImagingFileTypes table and checks
@@ -100,6 +100,7 @@ class Imaging:
 
         return file_type
 
+    @deprecated('Use `lib.db.queries.try_get_file_with_hash` instead.')
     def grep_file_info_from_hash(self, hash_string):
         """
         Greps the file ID from the files table. If it cannot be found, the method will return None.
@@ -132,13 +133,15 @@ class Imaging:
             series_uid, echo_time, phase_enc_dir, echo_number
         )
 
+    @deprecated('Use `lib.imaging_lib.file.register_mri_file` instead.')
     def insert_imaging_file(self, file_info_dict, parameter_file_data_dict):
         """
         Inserts the imaging file and its information into the files and parameter_file tables.
 
         :param file_info_dict: dictionary with values to insert into files' table
          :type file_info_dict: dict
-        :param parameter_file_data_dict: dictionary with values to insert into parameter_file's table
+        :param parameter_file_data_dict: dictionary with values to insert into parameter_file's
+                                         table
          :type parameter_file_data_dict: dict
 
         :return: file ID
@@ -154,6 +157,7 @@ class Imaging:
 
         return file_id
 
+    @deprecated('Use `lib.imaging_lib.file_parameter.register_mri_file_parameter` instead.')
     def insert_parameter_file(self, file_id, parameter_name, value):
         """
         Insert a row into the parameter_file table for the provided FileID,
@@ -168,7 +172,7 @@ class Imaging:
         """
 
         # convert list values into strings that could be inserted into parameter_file
-        if type(value) == list:
+        if type(value) is list:
             if value and type(value[0]) in [float, int]:
                 value = [str(f) for f in value]
             value = f"[{', '.join(value)}]"
@@ -255,7 +259,8 @@ class Imaging:
         phase_encoding_dir = scan_param["PhaseEncodingDirection"] \
             if "PhaseEncodingDirection" in scan_param.keys() else None
 
-        # if there is already an entry for this violation in mri_protocol_violated_scans, do not insert anything
+        # if there is already an entry for this violation in mri_protocol_violated_scans, do not
+        # insert anything
         existing_prot_viol_scans = self.mri_prot_viol_scan_db_obj.get_protocol_violations_for_tarchive_id(tarchive_id)
         for row in existing_prot_viol_scans:
             if row['SeriesUID'] == series_uid \
@@ -265,7 +270,10 @@ class Imaging:
                 return
 
         info_to_insert_dict = {
+            # C-BIG OVERRIDE START
+            # Remove when updating to LORIS 27
             "CandID": cand_id,
+            # C-BIG OVERRIDE END
             "PSCID": psc_id,
             "TarchiveID": tarchive_id,
             "time_run": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -293,9 +301,11 @@ class Imaging:
 
     def insert_mri_violations_log(self, info_to_insert_dict):
         """
-        Inserts into mri_violations_log table the entry determined by the information stored in info_to_insert_dict.
+        Inserts into mri_violations_log table the entry determined by the information stored in
+        info_to_insert_dict.
 
-        :param info_to_insert_dict: dictionary with the information to be inserted in mri_violations_log
+        :param info_to_insert_dict: dictionary with the information to be inserted in
+                                    mri_violations_log
          :type info_to_insert_dict: dict
         """
 
@@ -303,18 +313,24 @@ class Imaging:
         echo_number = repr(info_to_insert_dict["EchoNumber"])
         phase_encoding_dir = info_to_insert_dict["PhaseEncodingDirection"]
         echo_time = info_to_insert_dict['EchoTime']
+        # C-BIG OVERRIDE START
+        # Remove when updating to LORIS 27
         scan_type = info_to_insert_dict['Scan_type']
+        # C-BIG OVERRIDE END
         severity = info_to_insert_dict['Severity']
         header = info_to_insert_dict['Header']
         value = info_to_insert_dict['Value']
         valid_regex = info_to_insert_dict['ValidRegex']
         valid_range = info_to_insert_dict['ValidRange']
 
-        # if there is already an entry for this violation in mri_violations_log, do not insert anything
+        # if there is already an entry for this violation in mri_violations_log, do not insert
+        # anything
         existing_viol_logs = self.mri_viol_log_db_obj.get_violations_for_tarchive_id(
             info_to_insert_dict['TarchiveID']
         )
         for row in existing_viol_logs:
+            # C-BIG OVERRIDE START
+            # Remove when updating to LORIS 27
             if str(row['SeriesUID']) == str(series_uid) \
                     and str(row['PhaseEncodingDirection']) == str(phase_encoding_dir) \
                     and str(row['EchoNumber']) == str(echo_number) \
@@ -326,9 +342,11 @@ class Imaging:
                     and str(row['ValidRange']) == str(valid_range) \
                     and str(row['ValidRegex']) == str(valid_regex):
                 return
+            # C-BIG OVERRIDE END
 
         self.mri_viol_log_db_obj.insert_violations_log(info_to_insert_dict)
 
+    @deprecated('Use `lib.imaging_lib.parameter.get_or_create_parameter_type` instead.')
     def get_parameter_type_id(self, parameter_name):
         """
         Greps ParameterTypeID from parameter_type table using parameter_name.
@@ -390,6 +408,7 @@ class Imaging:
         """
         return self.mri_scan_type_db_obj.get_scan_type_id_from_name(scan_type_name)
 
+    @deprecated('Use `lib.imaging_lib.file_parameter.get_bids_to_loris_parameter_types_dict` instead')
     def get_bids_to_minc_terms_mapping(self):
         """
         Returns the BIDS to MINC terms mapping queried from parameter_type table.
@@ -453,6 +472,7 @@ class Imaging:
         if param_type_id:
             return self.param_file_db_obj.get_parameter_file_for_file_id_param_type_id(file_id, param_type_id)
 
+    @deprecated('Use `lib.db.models.file.DbFile.file_type` instead.')
     def grep_file_type_from_file_id(self, file_id):
         """
         Greps the file type stored in the files table using its FileID.
@@ -471,6 +491,7 @@ class Imaging:
         # return the result
         return results[0]['FileType'] if results else None
 
+    @deprecated('Use `lib.db.models.file.DbFile.path` instead.')
     def grep_file_path_from_file_id(self, file_id):
         """
         Greps the file path stored in the files table using its FileID.
@@ -489,6 +510,7 @@ class Imaging:
         # return the result
         return results[0]['File'] if results else None
 
+    @deprecated('Use `lib.db.models.file.DbFile.candidate.cand_id` instead.')
     def grep_cand_id_from_file_id(self, file_id):
         """
         Greps the CandID using the file's FileID.
@@ -500,103 +522,19 @@ class Imaging:
          :rtype: int
         """
 
+        # C-BIG OVERRIDE START
+        # Remove when updating to LORIS 27
         query = "SELECT CandID " + \
                 " FROM session s " + \
+                " JOIN candidate c ON (c.CandID=s.CandID)" \
                 " JOIN files f ON (s.ID=f.SessionID) " + \
                 " WHERE FileID = %s"
+        # C-BIG OVERRIDE END
 
         results = self.db.pselect(query=query, args=(file_id,))
 
         # return the result
         return results[0]['CandID'] if results else None
-
-    def determine_subject_ids(self, tarchive_info_dict, scanner_id=None):
-        """
-        Determine subject IDs based on the DICOM header specified by the lookupCenterNameUsing
-        config setting. This function will call a function in the config file that can be
-        customized for each project.
-
-        :param tarchive_info_dict: dictionary with information about the DICOM archive queried
-                                   from the tarchive table
-         :type tarchive_info_dict: dict
-        :param scanner_id        : ScannerID
-         :type scanner_id        : int or None
-
-        :return subject_id_dict: dictionary with subject IDs and visit label or error status
-         :rtype subject_id_dict: dict
-        """
-
-        config_obj = Config(self.db, self.verbose)
-        dicom_header = config_obj.get_config('lookupCenterNameUsing')
-        dicom_value = tarchive_info_dict[dicom_header]
-
-        try:
-            subject_id_dict = self.config_file.get_subject_ids(self.db, dicom_value, scanner_id)
-            subject_id_dict['PatientName'] = dicom_value
-        except AttributeError:
-            message = 'Config file does not contain a get_subject_ids routine. Upload will exit now.'
-            return {'error_message': message}
-
-        return subject_id_dict
-
-    def validate_subject_ids(self, subject_id_dict):
-        """
-        Ensure that the subject PSCID/CandID corresponds to a single candidate in the candidate
-        table and that the visit label can be found in the Visit_Windows table. If those
-        conditions are not fulfilled, then a 'CandMismatchError' with the validation error
-        is added to the subject IDs dictionary (subject_id_dict).
-
-        :param subject_id_dict : dictionary with subject IDs and visit label
-         :type subject_id_dict : dict
-
-        :return: True if the subject IDs are valid, False otherwise
-         :rtype: bool
-        """
-
-        psc_id = subject_id_dict['PSCID']
-        cand_id = subject_id_dict['CandID']
-        visit_label = subject_id_dict['visitLabel']
-        is_phantom = subject_id_dict['isPhantom']
-
-        # no further checking if the subject is phantom
-        if is_phantom:
-            return True
-
-        # check that the CandID and PSCID are valid
-        # TODO use candidate_db class for that for bids_import
-        query = 'SELECT c1.CandID, c2.PSCID AS PSCID ' \
-                ' FROM candidate c1 ' \
-                ' LEFT JOIN candidate c2 ON (c1.CandID=c2.CandID AND c2.PSCID = %s) ' \
-                ' WHERE c1.CandID = %s'
-        results = self.db.pselect(query=query, args=(psc_id, cand_id))
-        if not results:
-            # if no rows were returned, then the CandID is not valid
-            subject_id_dict['message'] = '=> Could not find candidate with CandID=' + cand_id \
-                                         + ' in the database'
-            subject_id_dict['CandMismatchError'] = 'CandID does not exist'
-            return False
-        elif not results[0]['PSCID']:
-            # if no PSCID returned in the row, then PSCID and CandID do not match
-            subject_id_dict['message'] = '=> PSCID and CandID of the image mismatch'
-            # Message is undefined
-            subject_id_dict['CandMismatchError'] = subject_id_dict['message']
-            return False
-
-        # check if visit label is valid
-        # TODO use visit_windows class for that for bids_import
-        query = 'SELECT Visit_label FROM Visit_Windows WHERE BINARY Visit_label = %s'
-        results = self.db.pselect(query=query, args=(visit_label,))
-        if results:
-            subject_id_dict['message'] = f'=> Found visit label {visit_label} in Visit_Windows'
-            return True
-        elif subject_id_dict['createVisitLabel']:
-            subject_id_dict['message'] = f'=> Will create visit label {visit_label} in Visit_Windows'
-            return True
-        else:
-            subject_id_dict['message'] = f'=> Visit Label {visit_label} does not exist in Visit_Windows'
-            # Message is undefined
-            subject_id_dict['CandMismatchError'] = subject_id_dict['message']
-            return False
 
     def map_bids_param_to_loris_param(self, file_parameters):
         """
@@ -625,17 +563,19 @@ class Imaging:
     def get_acquisition_protocol_info(self, protocols_list, nifti_name, scan_param, scan_type=None):
         """
         Get acquisition protocol information (scan_type_id or message to be printed in the log).
-        - If the protocols list provided as input is empty, the scan_type_id will be set to None and proper message
-        will be returned
-        - If no protocol listed in protocols_list matches the parameters of the scan, then the scan_type_id will be set
-        to None and proper message will be returned
-        - If more than one protocol matches, the scan_type_id will be set to None and proper message will be returned
+        - If the protocols list provided as input is empty, the scan_type_id will be set to None and
+          proper message will be returned
+        - If no protocol listed in protocols_list matches the parameters of the scan, then the
+          scan_type_id will be set to None and proper message will be returned
+        - If more than one protocol matches, the scan_type_id will be set to None and proper message
+          will be returned
 
         :param protocols_list: list of protocols to loop through to find a matching protocol
          :type protocols_list: list
         :param nifti_name: name of the NIfTI file to print in the returned message
          :type nifti_name: str
-        :param scan_param: dictionary with the scan parameters to use to determine acquisition protocol
+        :param scan_param: dictionary with the scan parameters to use to determine acquisition
+                           protocol
          :type scan_param: dict
 
         :return: dictionary with 'scan_type_id' and 'message' keys.
@@ -691,13 +631,14 @@ class Imaging:
 
     def get_bids_categories_mapping_for_scan_type_id(self, scan_type_id):
         """
-        Function that get the BIDS information for a given scan type ID from the database and returns a
-        dictionary with this information
+        Function that get the BIDS information for a given scan type ID from the database and
+        returns a dictionary with this information
 
         :param scan_type_id: scan type ID to use to query the BIDS information for that scan type
          :type scan_type_id: int
 
-        :return: dictionary with the BIDS entities to be associated with that scan type in the future NIfTI file name
+        :return: dictionary with the BIDS entities to be associated with that scan type in the
+                 future NIfTI file name
          :rtype: dict
         """
 
@@ -720,6 +661,8 @@ class Imaging:
 
         matching_protocols_list = []
         for protocol in protocols_list:
+            # C-BIG OVERRIDE START
+            # Remove when updating to LORIS 27
             if scan_type_id and protocol['Scan_type'] == scan_type_id:
                 matching_protocols_list.append(protocol['Scan_type'])
             elif protocol['series_description_regex']:
@@ -729,12 +672,14 @@ class Imaging:
                     matching_protocols_list.append(protocol['Scan_type'])
             elif self.is_scan_protocol_matching_db_protocol(protocol, scan_param):
                 matching_protocols_list.append(protocol['Scan_type'])
+            # C-BIG OVERRIDE END
 
         return list(dict.fromkeys(matching_protocols_list))
 
     def is_scan_protocol_matching_db_protocol(self, db_prot, scan_param):
         """
-        Determines if a scan protocol matches a protocol previously taken from the mri_protocol table.
+        Determines if a scan protocol matches a protocol previously taken from the mri_protocol
+        table.
 
         :param db_prot: database protocol to compare the scan parameters to
          :type db_prot: dict
@@ -771,7 +716,8 @@ class Imaging:
 
     def run_extra_file_checks(self, project_id, cohort_id, visit_label, scan_type_id, scan_param_dict):
         """
-        Runs the extra file checks for a given scan type to determine if there are any violations to protocol.
+        Runs the extra file checks for a given scan type to determine if there are any violations to
+        protocol.
 
         :param project_id: Project ID associated with the image to be inserted
          :type project_id: int
@@ -784,11 +730,13 @@ class Imaging:
         :param scan_param_dict: scan parameters (from the JSON file)
          :type scan_param_dict: dict
 
-        :return: dictionary with two list: one for the 'warning' violations and one for the 'exclude' violations
+        :return: dictionary with two list: one for the 'warning' violations and one for the
+                 'exclude' violations
          :rtype: dict
         """
 
-        # get list of lines in mri_protocol_checks that apply to the given scan based on the protocol group
+        # get list of lines in mri_protocol_checks that apply to the given scan based on the
+        # protocol group
         checks_list = self.mri_prot_check_db_obj.get_list_of_possible_protocols_based_on_session_info(
             project_id, cohort_id, visit_label, scan_type_id
         )
@@ -817,12 +765,14 @@ class Imaging:
          :type checks_list: list
         :param header: name of the header to use to check if there is a violation
          :type header: str
-        :param severity: severity of the violation (one of 'warning' or 'exclude') in mri_protocol_checks
+        :param severity: severity of the violation (one of 'warning' or 'exclude') in
+                         mri_protocol_checks
          :type severity: str
         :param scan_param_dict: image parameters
          :type scan_param_dict: dict
 
-        :return: dictionary with the details regarding the violation (to be inserted in mri_violations_log eventually)
+        :return: dictionary with the details regarding the violation (to be inserted in
+                 mri_violations_log eventually)
          :rtype: dict
         """
 
@@ -854,7 +804,7 @@ class Imaging:
             True for v in valid_ranges if self.in_range(scan_param, v[0], v[1])]
         )) if valid_ranges else True
         passes_regex_check = bool(len([
-            True for r in valid_regexs if re.match(r, scan_param, re.IGNORECASE)
+            True for r in valid_regexs if re.search(r, scan_param, re.IGNORECASE)
         ])) if valid_regexs else True
 
         if passes_regex_check and passes_range_check:
@@ -869,6 +819,7 @@ class Imaging:
                 'MriProtocolChecksGroupID': hdr_checks_list[0]['MriProtocolChecksGroupID']
             }
 
+    @deprecated('Use `lib.imaging_lib.mri_scanner.get_or_create_scanner` instead')
     def get_scanner_id(self, manufacturer, software_version, serial_nb, model_name, center_id, project_id):
         """
         Get the scanner ID based on the scanner information provided as input.
@@ -895,6 +846,7 @@ class Imaging:
             project_id
         )
 
+    @deprecated('Use `lib.db.models.DbScanner.candidate` instead')
     def get_scanner_candid(self, scanner_id):
         """
         Select a ScannerID CandID based on the scanner ID in mri_scanner.
@@ -914,7 +866,8 @@ class Imaging:
         :param tarchive_id: the Tarchive ID to process
          :type tarchive_id: int
 
-        :return: a dictionary with the fieldmap scans dictionary containing JSON file path and intendedFor information
+        :return: a dictionary with the fieldmap scans dictionary containing JSON file path and
+                 intendedFor information
          :rtype: dict
         """
 
@@ -928,8 +881,8 @@ class Imaging:
         sorted_new_files_list = self.get_list_of_files_sorted_by_acq_time(files_list)
 
         if not sorted_new_files_list or not sorted_fmap_files_dict:
-            # if got empty lists, then there are no files to determine IntendedFor either because acq_time
-            # was not set or because there are no fieldmap data
+            # if got empty lists, then there are no files to determine IntendedFor either because
+            # acq_time was not set or because there are no fieldmap data
             return None
 
         for key in sorted_fmap_files_dict.keys():
@@ -949,6 +902,7 @@ class Imaging:
 
         return sorted_fmap_files_dict
 
+    @deprecated('Use `lib.db.models.dicom_archive.DbDicomArchive.mri_files` instead.')
     def get_list_of_files_already_inserted_for_tarchive_id(self, tarchive_id):
         """
         Get the list of filenames already inserted for a given TarchiveID.
@@ -969,6 +923,7 @@ class Imaging:
 
         return files_list
 
+    @deprecated('Use `lib.db.models.session.DbSession.files` instead.')
     def get_list_of_files_already_inserted_for_session_id(self, session_id):
         """
         Get the list of filenames already inserted for a given SessionID.
@@ -991,17 +946,19 @@ class Imaging:
 
     def get_list_of_fmap_files_sorted_by_acq_time(self, files_list):
         """
-        Get the list of fieldmap acquisitions that requires the IntendedFor field in their JSON file.
-        The following BIDS suffix will need that field according to BIDS standards:
+        Get the list of fieldmap acquisitions that requires the IntendedFor field in their JSON
+        file. The following BIDS suffix will need that field according to BIDS standards:
           - magnitude, magnitude1, magnitude2
           - phasediff, phase1, phase2
           - fieldmap
           - epi
 
-        :param files_list: a list of dictionaries with all NIfTI files produced for a given tarchive ID
+        :param files_list: a list of dictionaries with all NIfTI files produced for a given tarchive
+                           ID
          :type files_list: list
 
-        :return: a dictionary with the dir-AP, dir-PA and no-dir keys listing the different NIfTI files for the tarchive
+        :return: a dictionary with the dir-AP, dir-PA and no-dir keys listing the different NIfTI
+                 files for the tarchive
          :rtype: dict
         """
 
@@ -1016,7 +973,10 @@ class Imaging:
         for file_dict in files_list:
 
             bids_info = self.mri_prot_db_obj.get_bids_info_for_scan_type_id(
+                # C-BIG OVERRIDE START
+                # Remove when updating to LORIS 27
                 file_dict['AcquisitionProtocolID']
+                # C-BIG OVERRIDE END
             )
             param_file_result = self.param_file_db_obj.get_parameter_file_for_file_id_param_type_id(
                 file_dict['FileID'],
@@ -1036,9 +996,9 @@ class Imaging:
                     'json_file_path': json_file_path,
                     'acq_time': acq_time
                 }
-                if re.match(r'dir-AP', bids_info['BIDSScanTypeSubCategory']):
+                if 'dir-AP' in bids_info['BIDSScanTypeSubCategory']:
                     fmap_files_dir_ap.append(file_dict)
-                elif re.match(r'dir-PA', bids_info['BIDSScanTypeSubCategory']):
+                elif 'dir-PA' in bids_info['BIDSScanTypeSubCategory']:
                     fmap_files_dir_pa.append(file_dict)
                 else:
                     fmap_files_no_dir.append(file_dict)
@@ -1056,13 +1016,15 @@ class Imaging:
 
     def get_list_of_files_sorted_by_acq_time(self, files_list):
         """
-        Get a sorted list of the NIfTI files that might need fmap correction. That includes files with
+        Get a sorted list of the NIfTI files that might need fmap correction. That includes files
+        with
           - dwi BIDS subcategory: dwi, sbref
           - func BIDS subcategory: bold, sbref
           - perf BIDS subcategory: asl, sbref
         The returned list will be sorted by acquisition time.
 
-        :param files_list: a list of dictionaries with all NIfTI files produced for a given tarchive ID
+        :param files_list: a list of dictionaries with all NIfTI files produced for a given tarchive
+                           ID
          :type files_list: list
 
         :return: the list of files that might need fmap correction sorted by acquisition time.
@@ -1077,7 +1039,10 @@ class Imaging:
         new_files_list = []
         for file_dict in files_list:
             bids_info = self.mri_prot_db_obj.get_bids_info_for_scan_type_id(
+                # C-BIG OVERRIDE START
+                # Remove when updating to LORIS 27
                 file_dict['AcquisitionProtocolID']
+                # C-BIG OVERRIDE END
             )
             param_file_result = self.param_file_db_obj.get_parameter_file_for_file_id_param_type_id(
                 file_dict['FileID'],
@@ -1117,7 +1082,8 @@ class Imaging:
         """
         Function that reads the JSON file and modifies it to add the BIDS IntendedFor field to it.
 
-        :param sorted_fmap_files_list: list of dictionary that contains JSON file path info and IntendedFor content
+        :param sorted_fmap_files_list: list of dictionary that contains JSON file path info and
+                                       IntendedFor content
          :type sorted_fmap_files_list: list
         :param s3_obj: S3 object for downloading and uploading of S3 files
          :type s3_obj: AWS object
@@ -1145,7 +1111,7 @@ class Imaging:
             json_data['IntendedFor'] = fmap_dict['IntendedFor']
             with open(json_file_path, 'w') as json_file:
                 json_file.write(json.dumps(json_data, indent=4))
-            json_blake2 = utilities.compute_blake2b_hash(json_file_path)
+            json_blake2 = compute_file_blake2b_hash(json_file_path)
             param_type_id = self.param_type_db_obj.get_parameter_type_id('bids_json_file_blake2b_hash')
             param_file_dict = self.param_file_db_obj.get_parameter_file_for_file_id_param_type_id(
                 fmap_dict['FileID'],
@@ -1164,13 +1130,14 @@ class Imaging:
     def get_intended_for_list_of_scans_after_fieldmap_acquisition_based_on_acq_time(files_list, current_fmap_acq_time,
                                                                                     next_fmap_acq_time):
         """
-        Determine the list files to add to the IntendedFor field of the current JSON fieldmap examined.
-        The matching files will be the ones acquired after the current fieldmap examined and before the next
-        fieldmap examined.
+        Determine the list files to add to the IntendedFor field of the current JSON fieldmap
+        examined. The matching files will be the ones acquired after the current fieldmap examined
+        and before the next fieldmap examined.
 
         :param files_list: list of files to loop through
          :type files_list: list
-        :param current_fmap_acq_time: the acquisition time of the fieldmap for which IntendedFor is generated
+        :param current_fmap_acq_time: the acquisition time of the fieldmap for which IntendedFor is
+                                      generated
          :type current_fmap_acq_time: str
         :param next_fmap_acq_time: the acquisition of the next fieldmap
          :type next_fmap_acq_time: str
@@ -1212,7 +1179,7 @@ class Imaging:
         """
         tar = tarfile.open(dicom_archive_path)
         tar.extractall(path=extract_location_dir)
-        inner_tar_file_name = [f.name for f in tar.getmembers() if f.name.endswith('.tar.gz')][0]
+        inner_tar_file_name = next(f.name for f in tar.getmembers() if f.name.endswith('.tar.gz'))
         tar.close()
 
         inner_tar_path = os.path.join(extract_location_dir, inner_tar_file_name)
@@ -1223,6 +1190,7 @@ class Imaging:
         extracted_dicom_dir_path = inner_tar_path.replace(".tar.gz", "")
         return extracted_dicom_dir_path
 
+    @deprecated('Use `lib.imaging_lib.nifti_pic.create_nifti_preview_picture` instead.')
     @staticmethod
     def create_imaging_pic(file_info, pic_rel_path=None):
         """
@@ -1246,7 +1214,7 @@ class Imaging:
         file_id = file_info['file_id']
 
         pic_name = os.path.basename(file_path)
-        pic_name = re.sub(r"\.nii(\.gz)?$", f'_{str(file_id)}_check.png', pic_name)
+        pic_name = re.sub(r"\.nii(\.gz)?$", f'_{file_id}_check.png', pic_name)
         pic_rel_path = os.path.join(str(cand_id), pic_name)
 
         # create the candID directory where the pic will go if it does not already exist
@@ -1260,9 +1228,9 @@ class Imaging:
             anat_img=volume,
             output_file=os.path.join(file_info['data_dir_path'], 'pic', pic_rel_path),
             display_mode='ortho',
-            black_bg=1,
-            draw_cross=0,
-            annotate=0
+            black_bg=True,
+            draw_cross=False,
+            annotate=False,
         )
 
         return pic_rel_path
@@ -1322,12 +1290,13 @@ class Imaging:
          :rtype: bool
         """
 
-        # return True when parameter min and max values are not defined (a.k.a. no restrictions in mri_protocol)
+        # return True when parameter min and max values are not defined (a.k.a. no restrictions in
+        # mri_protocol)
         if not field_min and not field_max:
             return True
 
-        # return False if value is not defined since this field is listed as a restriction in mri_protocol
-        # (a.k.a. passed the first if)
+        # return False if value is not defined since this field is listed as a restriction in
+        # mri_protocol (a.k.a. passed the first if)
         if not value:
             return False
 

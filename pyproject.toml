@@ -1,41 +1,143 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
+name = "loris"
+version = "27.0.0"
+description = "The LORIS Python package"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 requires-python = ">= 3.11"
+dependencies = [
+    "boto3==1.35.99",
+    "botocore",
+    "mat73",
+    "mysqlclient",
+    "nibabel",
+    "nilearn",
+    "numpy",
+    "pybids==0.17.0",
+    "python-dateutil",
+    "requests",
+    "scipy",
+    "sqlalchemy>=2.0.0",
+    "typing-extensions",
+    "loris-bids-importer  @ {root:uri}/python/loris_bids_importer",
+    "loris-bids-utils     @ {root:uri}/python/loris_bids_utils",
+    "loris-dicom-importer @ {root:uri}/python/loris_dicom_importer",
+    "loris-ephys-chunker  @ {root:uri}/python/loris_ephys_chunker",
+    "loris-utils          @ {root:uri}/python/loris_utils",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pyright",
+    "pytest",
+    "ruff",
+    "typos",
+]
+
+[project.urls]
+Homepage = "https://github.com/aces/loris-mri"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "python/lib",
+    "python/tests",
+]
+
+[tool.uv.workspace]
+members = ["python/loris_*"]
+
+[tool.uv.sources]
+loris_bids_importer  = { workspace = true }
+loris_bids_utils     = { workspace = true }
+loris_dicom_importer = { workspace = true }
+loris_ephys_chunker  = { workspace = true }
+loris_utils          = { workspace = true }
 
 [tool.ruff]
 src = ["python"]
 include = ["python/**/*.py"]
-exclude = ["python/react-series-data-viewer"]
 line-length = 120
 preview = true
 
 [tool.ruff.lint]
 ignore = ["E202", "E203", "E221", "E241", "E251", "E272"]
-select = ["E", "F", "I", "N", "UP", "W"]
+select = ["E", "EXE", "F", "I", "N", "RUF", "UP", "W"]
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 100
+
+[tool.ruff.lint.per-file-ignores]
+# ORM models often have very long lines.
+"python/lib/db/models/*.py" = ["E501"]
 
 # The strict type checking configuration is used to type check only the modern (typed) modules. An
 # additional basic type checking configuration to type check legacy modules can be found in the
 # `test` directory.
 [tool.pyright]
-include = [
-    "python/tests",
-    "python/lib/db",
-    "python/lib/imaging_lib",
-    "python/lib/import_bids_dataset",
-    "python/lib/import_dicom_study",
-    "python/lib/util",
-    "python/lib/config.py",
-    "python/lib/config_file.py",
-    "python/lib/env.py",
-    "python/lib/get_session_info.py",
-    "python/lib/logging.py",
-    "python/lib/make_env.py",
-    "python/lib/scanner.py",
-    "python/import_bids_dataset.py",
-    "python/import_dicom_study.py",
-    "python/summarize_dicom_study.py",
+include = ["python"]
+exclude = [
+    # Default Pyright ignores (needed for Pylance warning)
+    ".venv",
+    "**/.*",
+    "**/__pycache__",
+    "**/node_modules",
+    # Deprecated modules (to be deleted)
+    "python/lib/candidate.py",
+    "python/lib/dicom_archive.py",
+    "python/lib/imaging_io.py",
+    "python/lib/imaging_upload.py",
+    "python/lib/session.py",
+    "python/lib/log.py",
+    # Untyped modules
+    "python/lib/database_lib",
+    "python/lib/aws_s3.py",
+    "python/lib/database.py",
+    "python/lib/imaging.py",
+    "python/lib/lorisgetopt.py",
+    "python/lib/utilities.py",
+    # Untyped scripts
+    "python/scripts/delete_physiological_file.py",
+    "python/scripts/extract_eeg_bids_archive.py",
+    "python/scripts/ingest_eeg_bids_datasets.py",
+    # DICOM to BIDS converter pipeline
+    "python/lib/dcm2bids_imaging_pipeline_lib",
+    "python/scripts/run_dicom_archive_loader.py",
+    "python/scripts/run_dicom_archive_validation.py",
+    "python/scripts/run_nifti_insertion.py",
+    "python/scripts/run_push_imaging_files_to_s3_pipeline.py",
+    # Untyped EEG BIDS import code
+    "python/loris_bids_importer/src/loris_bids_importer/eeg",
+    # Generated protocol buffer code
+    "python/loris_ephys_chunker/src/loris_ephys_chunker/protocol_buffers",
 ]
 typeCheckingMode = "strict"
 reportMissingTypeStubs = "none"
+
+[tool.typos.files]
+# Ignore Perl files for now.
+extend-exclude = [
+    "*.al", "*.pl", "*.pm",
+    "/docs/scripts_md",
+]
+
+[tool.typos.default]
+locale = "en-us"
+
+[tool.typos.default.extend-words]
+Centre = "Centre"  # McGill Centre for Integrative Neuroscience
+HED = "HED"  # Hierarchical Event Descriptors
+ND = "ND"  # Image Type DICOM attribute
+
+[tool.typos.default.extend-identifiers]
+ba = "ba"  # A CLI option of dcm2niix
 
 [tool.pytest.ini_options]
 # Integration tests are located in `python/tests/integration`, but they should be ran from the

@@ -1,6 +1,6 @@
 """This class performs parameter_type* related database queries"""
 
-__license__ = "GPLv3"
+from typing_extensions import deprecated
 
 
 class ParameterType:
@@ -56,9 +56,10 @@ class ParameterType:
         results = self.db.pselect(query=query, args=args)
         return results[0]["ParameterTypeID"] if results else None
 
+    @deprecated('Use `lib.imaging_lib.file_parameter.get_bids_to_loris_parameter_types_dict` instead')
     def get_bids_to_minc_mapping_dict(self):
         """
-        Queries the BIDS to MINC mapping dictionary stored in the paramater_type table and returns a
+        Queries the BIDS to MINC mapping dictionary stored in the parameter_type table and returns a
         dictionary with the BIDS term as keys and the MINC terms as values.
 
         :return: BIDS to MINC mapping dictionary
@@ -79,10 +80,11 @@ class ParameterType:
 
     def insert_parameter_type(self, field_value_dict):
         """
-        Inserts a row into the parameter_type table based on fields/values dictionary provided to the function.
+        Inserts a row into the parameter_type table based on fields/values dictionary provided to
+        the function.
 
-        :param field_value_dict: dictionary where the parameter_type field name are keys and values to insert
-                                 are in the dictionary values
+        :param field_value_dict: dictionary where the parameter_type field name are keys and values
+                                 to insert are in the dictionary values
          :type field_value_dict: dict
         """
 

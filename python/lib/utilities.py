@@ -1,25 +1,21 @@
 """Set of utility functions."""
 
-import os
-import sys
 import csv
 import filecmp
-import hashlib
-import numpy
-import scipy.io
+import os
 import shutil
+import sys
 import tarfile
 import tempfile
-import requests
-import re
-import io
-import mat73
-import lib.exitcode
-
 from datetime import datetime
-from pathlib import Path
 
-__license__ = "GPLv3"
+import loris_utils.crypto
+import mat73
+import numpy
+import scipy.io
+from typing_extensions import deprecated
+
+import lib.exitcode
 
 
 def read_tsv_file(tsv_file):
@@ -67,7 +63,8 @@ def append_to_tsv_file(new_tsv_file, old_tsv_file, key_value_check, verbose):
         print(f"ERROR: {tsv_basename} columns differ between {new_tsv_file} and {old_tsv_file}")
         sys.exit(lib.exitcode.PROGRAM_EXECUTION_FAILURE)
 
-    # loop through the rows of the new TSV file and check whether it is already present in the old TSV file
+    # loop through the rows of the new TSV file and check whether it is already present in the old
+    # TSV file
     for new_tsv_entry in new_tsv_content:
         if any(x[key_value_check] == new_tsv_entry[key_value_check] for x in old_tsv_content):
             if verbose:
@@ -100,19 +97,16 @@ def copy_file(file_orig, file_copy, verbose):
 
     if not os.path.exists(file_copy):
         if verbose:
-            print("Copying file " + file_orig + " to " + file_copy)
+            print(f"Copying file {file_orig} to {file_copy}")
         shutil.copyfile(file_orig, file_copy)
     elif not filecmp.cmp(file_orig, file_copy):
         # if files are not identical, then return file path to the copy and
         # a flag set to False to say that files were different
-        message = '\n\tERROR: ' + file_orig + ' and ' + file_copy + ' differ\n'
-        print(message)
+        print(f"ERROR: {file_orig} and {file_copy} differ")
         sys.exit(lib.exitcode.COPY_FAILURE)
 
     if not os.path.exists(file_copy):
-        message = '\n\tERROR: failed copying ' + file_orig + \
-                  ' to ' + file_copy + '\n'
-        print(message)
+        print(f"ERROR: failed copying {file_orig} to {file_copy}")
         sys.exit(lib.exitcode.COPY_FAILURE)
 
 
@@ -130,17 +124,17 @@ def create_dir(dir_name, verbose):
 
     if not os.path.exists(dir_name):
         if verbose:
-            print("Creating directory " + dir_name)
+            print(f"Creating directory {dir_name}")
         os.makedirs(dir_name)
 
     if not os.path.exists(dir_name):
-        message = '\n\tERROR: could not create directory ' + dir_name + '\n'
-        print(message)
+        print(f"ERROR: could not create directory {dir_name}")
         sys.exit(lib.exitcode.CREATE_DIR_FAILURE)
 
     return dir_name
 
 
+@deprecated('Use `loris_utils.archive.create_tar_gz_archive_with_files` instead')
 def create_archive(files_to_archive, archive_path):
     """
     Creates an archive with the files listed in the files_to_archive tuple.
@@ -200,20 +194,19 @@ def update_set_file_path_info(set_file, with_fdt_file):
 
         if 'filename' not in dataset.keys() or \
                 dataset['filename'] != set_file_name:
-            print('Expected `filename` field: {}'
-                  .format(set_file_name))
+            print(f'Expected `filename` field: {set_file_name}')
             return False
 
         if with_fdt_file:
             if 'datfile' not in dataset.keys() or \
                     dataset['datfile'] != fdt_file_name:
-                print('Expected `datfile` field: {}'
-                      .format(fdt_file_name))
+                print(f'Expected `datfile` field: {fdt_file_name}')
                 return False
 
     return True
 
 
+@deprecated('Use `loris_utils.crypto.compute_file_blake2b_hash` instead.')
 def compute_blake2b_hash(file_path):
     """
     Compute the blake2b hash of a file and returns it.
@@ -223,10 +216,10 @@ def compute_blake2b_hash(file_path):
      :rtype: str
     """
     if os.path.exists(file_path):
-        data = Path(file_path).read_bytes()
-        return hashlib.blake2b(data).hexdigest()
+        return loris_utils.crypto.compute_file_blake2b_hash(file_path)
 
 
+@deprecated('Use `loris_utils.crypto.compute_file_md5_hash` instead.')
 def compute_md5_hash(file_path):
     """
     Compute the md5 hash of a file and returns it.
@@ -236,10 +229,10 @@ def compute_md5_hash(file_path):
      :rtype: str
     """
     if os.path.exists(file_path):
-        data = Path(file_path).read_bytes()
-        return hashlib.md5(data).hexdigest()
+        return loris_utils.crypto.compute_file_md5_hash(file_path)
 
 
+@deprecated('Use `lib.make_env.create_script_tmp_dir` instead.')
 def create_processing_tmp_dir(template_prefix):
     """
     Creates a temporary directory with a name based on the concatenation of the
@@ -266,56 +259,10 @@ def create_processing_tmp_dir(template_prefix):
     return tmp_dir
 
 
+@deprecated('Use `loris_utils.fs.remove_empty_subdirectories` instead')
 def remove_empty_folders(path_abs):
 
     walk = list(os.walk(path_abs))
     for path, _, _ in walk[::-1]:
         if len(os.listdir(path)) == 0:
             os.rmdir(path)
-
-
-def assemble_hed_service(data_dir, event_tsv_path, event_json_path):
-    # Using HED Tool Rest Services to assemble the HED Tags
-    # https://hed-examples.readthedocs.io/en/latest/HedToolsOnline.html#hed-restful-services
-
-    # Request CSRF Token & session cookie
-    requestTokenURL = 'https://hedtools.ucsd.edu/hed/services'
-    tokenResponse = requests.get(requestTokenURL)
-
-    cookie = tokenResponse.headers['Set-Cookie']
-    token = re.search('csrf_token" value="(.+?)"', tokenResponse.text).group(1)
-
-    # Define headers for assemble POST request, containing token and cookie
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "X-CSRFToken": token,
-        "Cookie": cookie
-    }
-
-    # Read event files as str
-    eventJsonText = open(data_dir + event_json_path, 'r').read()
-    eventTsvText = open(data_dir + event_tsv_path, 'r').read()
-
-    # Define request parameters
-    params = {
-        'service': 'events_assemble',
-        'schema_version': '8.0.0',
-        'json_string': eventJsonText,
-        'events_string': eventTsvText,
-        'check_for_warnings': 'off',
-        'expand_defs': 'on',
-        'columns_included': ['onset']
-    }
-
-    # Make the request to assemble
-    requestAssembleURL = 'https://hedtools.ucsd.edu/hed/services_submit'
-    assembleResponse = requests.post(
-        requestAssembleURL, headers=headers, json=params
-    )
-
-    # get assembled results as dictionary
-    data = assembleResponse.json()['results']['data']
-    results = list(csv.DictReader(io.StringIO(data), delimiter='\t'))
-
-    return results

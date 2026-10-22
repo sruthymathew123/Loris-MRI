@@ -17,7 +17,7 @@ from lib.db.queries.session import try_get_session_with_cand_id_visit_label
 from lib.db.queries.site import try_get_site_with_alias
 from lib.db.queries.visit import try_get_visit_window_with_visit_label, try_get_visit_with_visit_label
 from lib.env import Env
-from lib.scanner import MriScannerInfo, get_or_create_scanner
+from lib.imaging_lib.mri_scanner import MriScannerInfo, get_or_create_scanner
 
 
 @dataclass
@@ -245,15 +245,15 @@ def create_session(
     """
 
     session = DbSession(
-        cand_id       = candidate.cand_id,
-        visit_label   = visit_label,
-        visit_number  = visit_number,
-        site_id       = create_session_info.site.id,
-        current_stage = 'Not Started',
-        scan_done     = True,
-        submitted     = False,
-        project_id    = create_session_info.project.id,
-        cohort_id     = create_session_info.cohort.id if create_session_info.cohort is not None else None,
+        # C-BIG OVERRIDE START
+        # Remove when updating to LORIS 27
+        cand_id          = candidate.cand_id,
+        # C-BIG OVERRIDE END
+        visit_label      = visit_label,
+        visit_number     = visit_number,
+        site_id          = create_session_info.site.id,
+        project_id       = create_session_info.project.id,
+        cohort_id        = create_session_info.cohort.id if create_session_info.cohort is not None else None,
     )
 
     env.db.add(session)

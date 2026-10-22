@@ -2,10 +2,16 @@
 This module stores the classes used in the Python configuration file of LORIS-MRI.
 """
 
+import importlib.util
+import os
+import sys
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from sqlalchemy.orm import Session as Database
 
+import lib.exitcode
 from lib.db.queries.site import get_all_sites
 
 
@@ -94,6 +100,60 @@ class SessionPhantomConfig:
 SessionConfig = SessionCandidateConfig | SessionPhantomConfig
 
 
+def load_config(arg: str | None) -> Any:
+    """
+    Load the LORIS-MRI Python configuration file from the environment or exit the program with an
+    error if that file is not found or cannot be loaded.
+    """
+
+    config_dir_path_value = os.environ.get('LORIS_CONFIG')
+    if config_dir_path_value is None:
+        print("ERROR: Environment variable 'LORIS_CONFIG' not set.", file=sys.stderr)
+        sys.exit(lib.exitcode.INVALID_ENVIRONMENT_VAR)
+
+    # C-BIG OVERRIDE START
+    # Remove when adopting the new config system
+    # - https://github.com/aces/loris-mri/pull/1317
+    # - https://github.com/aces/loris-mri/pull/1318
+
+    # Get the name of the configuration file from the argument or use the default name.
+    config_file_name = arg if arg is not None else 'database_config.py'
+
+    config_dir_path = Path(config_dir_path_value).resolve()
+    config_file_path = (config_dir_path / '.loris_mri' / config_file_name).resolve()
+    # C-BIG OVERRIDE END
+
+    if not config_file_path.is_relative_to(config_dir_path):
+        print(
+            (
+                f"ERROR: The configuration file value '{config_file_name}' is outside of the LORIS configuration"
+                " directory."
+            ),
+            file=sys.stderr,
+        )
+
+        sys.exit(lib.exitcode.INVALID_PATH)
+
+    if not config_file_path.exists():
+        print(
+            f"ERROR: No configuration file '{config_file_name}' found in the '{config_dir_path}' directory.",
+            file=sys.stderr,
+        )
+
+        sys.exit(lib.exitcode.INVALID_PATH)
+
+    # Use the stem of the configuration file as the module name.
+    spec = importlib.util.spec_from_file_location(config_file_path.stem, config_file_path)
+    if spec is None or spec.loader is None:
+        print(f"ERROR: Cannot load module specification for configuration file '{config_file_name}'.", file=sys.stderr)
+        sys.exit(lib.exitcode.INVALID_IMPORT)
+
+    # Load the configuration module.
+    config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config)
+    return config
+
+
 def try_get_site_id_with_patient_id_heuristic(db: Database, patient_id: str) -> int | None:
     """
     Try to get the ID of a session's site based on its patient ID. This function is a heuristic
@@ -104,8 +164,6 @@ def try_get_site_id_with_patient_id_heuristic(db: Database, patient_id: str) -> 
     sites = get_all_sites(db)
     for site in sites:
         if site.alias in patient_id:
-            return site.id
-        elif site.mri_alias in patient_id:
             return site.id
 
     return None

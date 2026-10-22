@@ -1,14 +1,13 @@
 import os
 import sys
 
+from loris_utils.crypto import compute_file_md5_hash
+
 import lib.exitcode
 from lib.db.models.dicom_archive import DbDicomArchive
 from lib.dcm2bids_imaging_pipeline_lib.base_pipeline import BasePipeline
 from lib.env import Env
 from lib.logging import log_error_exit, log_verbose
-from lib.util.crypto import compute_file_md5_hash
-
-__license__ = "GPLv3"
 
 
 class DicomValidationPipeline(BasePipeline):
@@ -34,9 +33,9 @@ class DicomValidationPipeline(BasePipeline):
         self.init_session_info()
         self._validate_dicom_archive_md5sum()
 
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         # If we get here, the tarchive is validated & the script stops running so update mri_upload
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         log_verbose(self.env, f"DICOM archive {self.options_dict['tarchive_path']['value']} is valid!")
 
         # Update the MRI upload.
@@ -55,7 +54,7 @@ class DicomValidationPipeline(BasePipeline):
 
         log_verbose(self.env, "Verifying DICOM archive md5sum (checksum)")
 
-        dicom_archive_path = os.path.join(self.dicom_lib_dir, self.dicom_archive.archive_location)
+        dicom_archive_path = os.path.join(self.dicom_lib_dir, self.dicom_archive.path)
         result = _validate_dicom_archive_md5sum(self.env, self.dicom_archive, dicom_archive_path)
         if not result:
             # Update the MRI upload.
@@ -75,7 +74,7 @@ def _validate_dicom_archive_md5sum(env: Env, dicom_archive: DbDicomArchive, dico
     This function validates that the md5sum of the DICOM archive on the filesystem is the same
     as the md5sum of the registered entry in the tarchive table.
 
-    Retrun `true` if the MD5 sums match, or `false` if they don't.
+    Return `true` if the MD5 sums match, or `false` if they don't.
     """
 
     # compute the md5sum of the tarchive file

@@ -112,11 +112,11 @@ echo
 ################################################################################
 ##Create the loris-mri python virtualenv and install the Python packages########
 ################################################################################
-echo "Creating loris-mri Python virtualenv in $mridir/python_virtualenvs/loris-mri-python/"
+echo "Creating loris-mri Python virtualenv in $mridir/.venv/loris-mri-python/"
 # create a directory in $mridir that will store python 3 virtualenv
-sudo -S su $USER -c "mkdir -m 770 -p $mridir/python_virtualenvs/loris-mri-python"
-virtualenv $mridir/python_virtualenvs/loris-mri-python -p `which python3`
-source $mridir/python_virtualenvs/loris-mri-python/bin/activate
+sudo -S su $USER -c "mkdir -m 770 -p $mridir/.venv/loris-mri-python"
+virtualenv $mridir/.venv/loris-mri-python -p `which python3`
+source $mridir/.venv/loris-mri-python/bin/activate
 echo "Installing the Python libraries into the loris-mri virtualenv..."
 pip3 install -r "$mridir/python/requirements.txt"
 # deactivate the virtualenv for now

@@ -2,7 +2,8 @@
 
 import random
 
-__license__ = "GPLv3"
+from lib.db.queries.candidate import try_get_candidate_with_cand_id
+from lib.env import Env
 
 
 class Candidate:
@@ -79,21 +80,6 @@ class Candidate:
 
         return loris_cand_info[0] if loris_cand_info else None
 
-    def map_sex(self, sex):
-        """
-        Maps the different possible values for sex to 'Male' and 'Female' as
-        present in the candidate table.
-
-        :param sex: sex value to map to values supported in the candidate table
-         :type sex: str
-        """
-
-        if sex.lower() in ('m', 'male'):
-            self.sex = 'Male'
-
-        if sex.lower() in ('f', 'female'):
-            self.sex = 'Female'
-
     @staticmethod
     def generate_cand_id(db):
         """
@@ -114,3 +100,15 @@ class Candidate:
             id = random.randint(100000, 999999)
 
         return id
+
+
+def generate_new_cand_id(env: Env) -> int:
+    """
+    Generate a new random CandID that is not already present in the database.
+    """
+
+    while True:
+        cand_id = random.randint(100000, 999999)
+        candidate = try_get_candidate_with_cand_id(env.db, cand_id)
+        if candidate is None:
+            return cand_id

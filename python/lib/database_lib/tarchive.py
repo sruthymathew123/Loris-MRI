@@ -1,9 +1,9 @@
 """This class performs DICOM archive related database queries and common checks"""
 
+from typing_extensions import deprecated
 
-__license__ = "GPLv3"
 
-
+@deprecated('Use `lib.db.models.dicom_archive.DbDicomArchive` instead')
 class Tarchive:
     """
     This class performs database queries for DICOM archives.
@@ -35,11 +35,13 @@ class Tarchive:
         self.db = db
         self.verbose = verbose
 
+    @deprecated('Use `lib.db.queries.dicom_archive.try_get_dicom_archive_with_*` instead')
     def create_tarchive_dict(self, archive_location=None, tarchive_id=None):
         """
         Create dictionary with DICOM archive information selected from the tarchive table.
 
-        :param archive_location: relative location of the DICOM archive (without data directory path)
+        :param archive_location: relative location of the DICOM archive (without data directory
+                                 path)
          :type archive_location: str
         :param tarchive_id     : TarchiveID of the DICOM archive in the tarchive table
          :type tarchive_id     : int
@@ -62,6 +64,7 @@ class Tarchive:
 
         return results[0] if results else None
 
+    @deprecated('Use `lib.db.models.dicom_archive.DbDicomArchive` instead')
     def update_tarchive(self, tarchive_id, fields, values):
         """
         Updates the tarchive table for a given TarchiveID.
@@ -80,6 +83,6 @@ class Tarchive:
 
         query += " WHERE TarchiveID = %s"
 
-        args = values + (tarchive_id,)
+        args = (*values, tarchive_id)
 
         self.db.update(query=query, args=args)

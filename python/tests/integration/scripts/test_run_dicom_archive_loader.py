@@ -1,8 +1,10 @@
+from pathlib import Path
+
 from lib.db.queries.config import set_config_with_setting_name
 from lib.db.queries.mri_upload import get_mri_upload_with_patient_name
 from lib.exitcode import GETOPT_FAILURE, INVALID_PATH, SELECT_FAILURE, SUCCESS
 from tests.util.database import get_integration_database_session
-from tests.util.file_system import check_file_tree
+from tests.util.file_system import assert_files_exist
 from tests.util.run_integration_script import run_integration_script
 
 
@@ -10,7 +12,6 @@ def test_invalid_arg():
 
     process = run_integration_script([
         'run_dicom_archive_loader.py',
-        '--profile', 'database_config.py',
         '--invalid_arg',
     ])
 
@@ -27,7 +28,6 @@ def test_non_existent_upload_id():
     # Run the script to test
     process = run_integration_script([
         'run_dicom_archive_loader.py',
-        '--profile', 'database_config.py',
         '--upload_id', invalid_upload_id,
     ])
 
@@ -45,7 +45,6 @@ def test_invalid_tarchive_path_arg():
     # Run the script to test
     process = run_integration_script([
         'run_dicom_archive_loader.py',
-        '--profile', 'database_config.py',
         '--tarchive_path', invalid_tarchive_path,
     ])
 
@@ -67,7 +66,6 @@ def test_successful_run_on_valid_tarchive_path():
     # Run the script to test
     process = run_integration_script([
         'run_dicom_archive_loader.py',
-        '--profile', 'database_config.py',
         '--tarchive_path', '/data/loris/tarchive/DCM_2015-07-07_MTL001_300001_V2_localizer_t1w.tar',
     ])
 
@@ -77,7 +75,7 @@ def test_successful_run_on_valid_tarchive_path():
     assert process.stderr == ""
 
     # Check that the expected files have been created
-    assert check_file_tree('/data/loris/assembly_bids', {
+    assert_files_exist('/data/loris/assembly_bids', {
         'sub-300001': {
             'ses-V2': {
                 'anat': {
@@ -89,7 +87,7 @@ def test_successful_run_on_valid_tarchive_path():
     })
 
     # Check that the expected data has been inserted in the database
-    archive_new_path = '2015/DCM_2015-07-07_MTL001_300001_V2_localizer_t1w.tar'
+    archive_new_path = Path('2015/DCM_2015-07-07_MTL001_300001_V2_localizer_t1w.tar')
     mri_upload = get_mri_upload_with_patient_name(db, 'MTL001_300001_V2')
     # check mri_upload flags
     assert mri_upload.inserting is False
@@ -101,10 +99,11 @@ def test_successful_run_on_valid_tarchive_path():
     assert mri_upload.dicom_archive is not None
     assert mri_upload.dicom_archive.session is not None
     # check that archive location has been updated
-    assert mri_upload.dicom_archive.archive_location == archive_new_path
+    assert mri_upload.dicom_archive.path == archive_new_path
     # check series/files counts
     # notes: - tarchive_series should have 2 series for this upload (localizer + T1W)
-    #        - localizer is skipped from conversion because of config settings `excluded_series_description`
+    #        - localizer is skipped from conversion because of config settings
+    #          `excluded_series_description`
     assert len(mri_upload.dicom_archive.series) == 2
     assert mri_upload.number_of_minc_inserted == 1
     assert mri_upload.number_of_minc_created == 1

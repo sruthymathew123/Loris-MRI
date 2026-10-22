@@ -1,5 +1,5 @@
-import os
 import re
+from pathlib import Path
 
 import nibabel as nib
 import numpy as np
@@ -9,47 +9,36 @@ from nilearn import plotting
 from lib.config import get_data_dir_path_config
 from lib.db.models.file import DbFile
 from lib.env import Env
+from lib.imaging_lib.file_parameter import register_mri_file_parameter
 
 
-def create_imaging_pic(env: Env, file: DbFile, is_4d_data: bool) -> str:
+def create_nifti_preview_picture(env: Env, nifti_file: DbFile) -> Path:
     """
-    Creates the preview pic that will show in the imaging browser view session
-    page. This pic will be stored in the data_dir/pic folder
-
-    :param file_info: dictionary with file information (path, file_id, cand_id...)
-        :type file_info: dict
-    :param pic_rel_path: relative path to the pic to use if one provided. Otherwise
-                            create_imaging_pic will automatically generate the pic name
-                            based on the file path of the NIfTI file
-        :type pic_rel_path: str
-
-    :return: path to the created pic
-        :rtype: str
+    Create the preview picture that is displayed to the user in the imaging browser view session
+    page. The path returned is relative to the `data_dir/pic` directory.
     """
 
     data_dir_path = get_data_dir_path_config(env)
 
-    cand_id = file.session.candidate.cand_id
-    file_path = os.path.join(data_dir_path, file.rel_path)
+    cand_id = nifti_file.session.candidate.cand_id
+    nifti_path = data_dir_path / nifti_file.path
 
-    pic_name = re.sub(r"\.nii(\.gz)?$", f'_{file.id}_check.png', os.path.basename(file.rel_path))
-    pic_rel_path = os.path.join(str(cand_id), pic_name)
-    pic_dir_path = os.path.join(data_dir_path, 'pic', str(cand_id))
-    pic_path = os.path.join(data_dir_path, 'pic', pic_rel_path)
+    pic_name = re.sub(r'\.nii(\.gz)?$', f'_{nifti_file.id}_check.png', nifti_file.path.name)
+    pic_path = data_dir_path / 'pic' / str(cand_id) / pic_name
 
-    # create the candID directory where the pic will go if it does not already exist
-    if not os.path.exists(pic_dir_path):
-        os.mkdir(pic_dir_path)
+    # Create the candidate picture directory if it does not already exist.
+    pic_path.parent.mkdir(exist_ok=True)
 
-    img = nib.load(file_path)  # type: ignore
+    img = nib.load(nifti_path)  # type: ignore
 
-    if is_4d_data:
-        # Only load the first slice of a 4D image.
+    if len(img.shape) == 4:  # type: ignore
+        # Only load the first 3D slice of a 4D image.
         data = img.dataobj[..., 0]  # type: ignore
     else:
+        # Load the full data for a 3D image.
         data = img.dataobj[...]  # type: ignore
 
-    # Load the image as float32 for plotting.
+    # Explicitly load the volume as float32 for plotting.
     volume = Nifti1Image(
         data.astype(np.float32, copy=False),  # type: ignore
         img.affine,  # type: ignore
@@ -63,5 +52,11 @@ def create_imaging_pic(env: Env, file: DbFile, is_4d_data: bool) -> str:
         draw_cross=False,
         annotate=False,
     )
+
+    pic_rel_path = pic_path.relative_to(data_dir_path / 'pic')
+
+    # Register the preview picture path as a file parameter.
+    register_mri_file_parameter(env, nifti_file, 'check_pic_filename', str(pic_rel_path))
+    env.db.commit()
 
     return pic_rel_path

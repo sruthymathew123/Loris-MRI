@@ -1,9 +1,9 @@
 """This class performs database queries for the physiological_task_event_opt table"""
 
+from typing_extensions import deprecated
 
-__license__ = "GPLv3"
 
-
+@deprecated('Use `lib.db.models.physio_task_event_opt.DbPhysioTaskEventOpt` instead.')
 class PhysiologicalTaskEventOpt:
 
     def __init__(self, db, verbose):

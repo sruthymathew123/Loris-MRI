@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -33,14 +34,12 @@ def setup():
         creating_user             = 'admin',
         sum_type_version          = 2,
         tar_type_version          = 2,
-        source_location           = '/tests/DCC001_111111_V1',
+        source_path               = Path('/tests/DCC001_111111_V1'),
         scanner_manufacturer      = 'Test scanner manufacturer',
         scanner_model             = 'Test scanner model',
         scanner_serial_number     = 'Test scanner serial number',
         scanner_software_version  = 'Test scanner software version',
-        upload_attempt            = 0,
         acquisition_metadata      = '',
-        pending_transfer          = False,
     )
 
     dicom_archive_2 = DbDicomArchive(
@@ -54,14 +53,12 @@ def setup():
         creating_user             = 'admin',
         sum_type_version          = 2,
         tar_type_version          = 2,
-        source_location           = '/test/DCC002_222222_V2',
+        source_path               = Path('/test/DCC002_222222_V2'),
         scanner_manufacturer      = 'Test scanner manufacturer',
         scanner_model             = 'Test scanner model',
         scanner_serial_number     = 'Test scanner serial number',
         scanner_software_version  = 'Test scanner software version',
-        upload_attempt            = 0,
         acquisition_metadata      = '',
-        pending_transfer          = False,
     )
 
     db.add(dicom_archive_1)

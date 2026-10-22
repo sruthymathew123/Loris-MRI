@@ -1,9 +1,9 @@
 """This class performs database queries for the physiological_file table"""
 
+from typing_extensions import deprecated
 
-__license__ = "GPLv3"
 
-
+@deprecated('Use `lib.db.physio_file.DbPhysioFile` instead')
 class PhysiologicalFile:
 
     def __init__(self, db, verbose):

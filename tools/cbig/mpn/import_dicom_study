@@ -12,4 +12,4 @@
 # Source LORIS-MRI environment
 source /data/cbigr/bin/mri/environment_cbigr
 # Run the command
-import_dicom_study.py "$@"
+import-dicom-study "$@"

@@ -1,9 +1,7 @@
-import os
-import sys
-
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from lib.config_file import load_config
 from lib.db.base import Base
 from lib.db.connect import get_database_engine
 
@@ -24,9 +22,12 @@ def get_integration_database_engine():
     Python configuration file.
     """
 
-    config_file = os.path.join(os.environ['LORIS_CONFIG'], '.loris_mri', 'database_config.py')
-    sys.path.append(os.path.dirname(config_file))
-    config = __import__(os.path.basename(config_file[:-3]))
+    # C-BIG OVERRIDE START
+    # Remove when adopting the new config system
+    # - https://github.com/aces/loris-mri/pull/1317
+    # - https://github.com/aces/loris-mri/pull/1318
+    config = load_config('database_config.py')
+    # C-BIG OVERRIDE END
     return get_database_engine(config.mysql)
 
 

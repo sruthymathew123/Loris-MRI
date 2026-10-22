@@ -1,0 +1,48 @@
+from decimal import Decimal, InvalidOperation
+
+
+def try_parse_decimal(string: str) -> Decimal | None:
+    """
+    Parse a string as a `Decimal` or return `None` if that string cannot be parsed or is NaN.
+    """
+
+    if string.lower() == 'nan':
+        return None
+
+    try:
+        return Decimal(string)
+    except InvalidOperation:
+        return None
+
+
+def try_parse_float(string: str) -> float | None:
+    """
+    Parse a string as a `float` or return `None` if that string cannot be parsed or is NaN.
+    """
+
+    if string.lower() == 'nan':
+        return None
+
+    try:
+        return float(string)
+    except ValueError:
+        return None
+
+
+def try_parse_int(string: str) -> int | None:
+    """
+    Parse a string as an `int` or return `None` if that string cannot be parsed.
+    """
+
+    try:
+        return int(string)
+    except ValueError:
+        return None
+
+
+def nullify_empty_string(string: str | None) -> str | None:
+    """
+    Replace a string with `None` if that string is empty.
+    """
+
+    return string if string != '' else None

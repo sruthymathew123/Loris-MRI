@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import ForeignKey
@@ -9,23 +10,30 @@ import lib.db.models.dicom_archive as db_dicom_archive
 import lib.db.models.mri_protocol_check_group as db_mri_protocol_check_group
 import lib.db.models.mri_scan_type as db_mri_scan_type
 from lib.db.base import Base
+from lib.db.decorators.string_path import StringPath
 
 
 class DbMriViolationLog(Base):
     __tablename__ = 'mri_violations_log'
 
     id                      : Mapped[int]              = mapped_column('LogID', primary_key=True)
-    time_run                : Mapped[datetime]         = mapped_column('TimeRun')
+    time_run                : Mapped[datetime]         = mapped_column('TimeRun', default=datetime.now)
     series_uid              : Mapped[str | None]       = mapped_column('SeriesUID')
     dicom_archive_id        : Mapped[int | None]       \
         = mapped_column('TarchiveID', ForeignKey('tarchive.TarchiveID'))
-    file_rel_path           : Mapped[str | None]       = mapped_column('MincFile')
+    file_path               : Mapped[Path | None]      = mapped_column('MincFile', StringPath)
     patient_name            : Mapped[str | None]       = mapped_column('PatientName')
-    cand_id                 : Mapped[int | None]       = mapped_column('CandID', ForeignKey('candidate.ID'))
+    # C-BIG OVERRIDE START
+    # Remove when updating to LORIS 27
+    cand_id                 : Mapped[int | None]       = mapped_column('CandID', ForeignKey('candidate.CandID'))
+    # C-BIG OVERRIDE END
     visit_label             : Mapped[str | None]       = mapped_column('Visit_label')
     check_id                : Mapped[int | None]       = mapped_column('CheckID')
+    # C-BIG OVERRIDE START
+    # Remove when updating to LORIS 27
     scan_type_id            : Mapped[int | None]       \
         = mapped_column('Scan_type', ForeignKey('mri_scan_type.ID'))
+    # C-BIG OVERRIDE END
     severity                : Mapped[str | None]       = mapped_column('Severity')
     header                  : Mapped[str | None]       = mapped_column('Header')
     value                   : Mapped[str | None]       = mapped_column('Value')

@@ -1,0 +1,27 @@
+"Language: Perl":
+- changed-files:
+  - any-glob-to-any-file: ['**/*.pl', '**/*.pm']
+
+"Language: Python":
+- changed-files:
+  - any-glob-to-any-file: '**/*.py'
+
+"Package: BIDS importer":
+- changed-files:
+  - any-glob-to-any-file: 'python/loris_bids_importer/**'
+
+"Package: BIDS utilities":
+- changed-files:
+  - any-glob-to-any-file: 'python/loris_bids_utils/**'
+
+"Package: DICOM importer":
+- changed-files:
+  - any-glob-to-any-file: 'python/loris_dicom_importer/**'
+
+"Package: Electrophysiology chunker":
+- changed-files:
+  - any-glob-to-any-file: 'python/loris_ephys_chunker/**'
+
+"Package: Utilities":
+- changed-files:
+  - any-glob-to-any-file: 'python/loris_utils/**'

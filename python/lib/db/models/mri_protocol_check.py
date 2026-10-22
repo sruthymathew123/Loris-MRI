@@ -12,8 +12,11 @@ class DbMriProtocolCheck(Base):
     __tablename__ = 'mri_protocol_checks'
 
     id                      : Mapped[int]            = mapped_column('ID', primary_key=True)
+    # C-BIG OVERRIDE START
+    # Remove when updating to LORIS 27
     scan_type_id            : Mapped[int | None] \
         = mapped_column('Scan_type', ForeignKey('mri_scan_type.ID'))
+    # C-BIG OVERRIDE END
     severity                : Mapped[str | None]     = mapped_column('Severity')
     header                  : Mapped[str | None]     = mapped_column('Header')
     valid_min               : Mapped[Decimal | None] = mapped_column('ValidMin')

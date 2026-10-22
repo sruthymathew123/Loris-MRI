@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import ForeignKey
@@ -6,48 +7,59 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 import lib.db.models.dicom_archive_file as db_dicom_archive_file
 import lib.db.models.dicom_archive_series as db_dicom_archive_series
+import lib.db.models.file as db_file
 import lib.db.models.mri_protocol_violated_scan as db_mri_protocol_violated_scan
 import lib.db.models.mri_upload as db_mri_upload
 import lib.db.models.mri_violation_log as db_mri_violation_log
 import lib.db.models.session as db_session
 from lib.db.base import Base
+from lib.db.decorators.int_bool import IntBool
+from lib.db.decorators.string_path import StringPath
 
 
 class DbDicomArchive(Base):
     __tablename__ = 'tarchive'
 
     id                       : Mapped[int]             = mapped_column('TarchiveID', primary_key=True)
-    study_uid                : Mapped[str]             = mapped_column('DicomArchiveID')
-    patient_id               : Mapped[str]             = mapped_column('PatientID')
-    patient_name             : Mapped[str]             = mapped_column('PatientName')
+    study_uid                : Mapped[str]             = mapped_column('DicomArchiveID', default='')
+    patient_id               : Mapped[str]             = mapped_column('PatientID', default='')
+    patient_name             : Mapped[str]             = mapped_column('PatientName', default='')
     patient_birthdate        : Mapped[date | None]     = mapped_column('PatientDoB')
     patient_sex              : Mapped[str | None]      = mapped_column('PatientSex')
     neuro_db_center_name     : Mapped[str | None]      = mapped_column('neurodbCenterName')
-    center_name              : Mapped[str]             = mapped_column('CenterName')
+    center_name              : Mapped[str]             = mapped_column('CenterName', default='')
     last_update              : Mapped[datetime | None] = mapped_column('LastUpdate')
     date_acquired            : Mapped[date | None]     = mapped_column('DateAcquired')
     date_first_archived      : Mapped[datetime | None] = mapped_column('DateFirstArchived')
     date_last_archived       : Mapped[datetime | None] = mapped_column('DateLastArchived')
-    acquisition_count        : Mapped[int]             = mapped_column('AcquisitionCount')
-    dicom_file_count         : Mapped[int]             = mapped_column('DicomFileCount')
-    non_dicom_file_count     : Mapped[int]             = mapped_column('NonDicomFileCount')
+    acquisition_count        : Mapped[int]             = mapped_column('AcquisitionCount', default=0)
+    dicom_file_count         : Mapped[int]             = mapped_column('DicomFileCount', default=0)
+    non_dicom_file_count     : Mapped[int]             = mapped_column('NonDicomFileCount', default=0)
     md5_sum_dicom_only       : Mapped[str | None]      = mapped_column('md5sumDicomOnly')
     md5_sum_archive          : Mapped[str | None]      = mapped_column('md5sumArchive')
-    creating_user            : Mapped[str]             = mapped_column('CreatingUser')
-    sum_type_version         : Mapped[int]             = mapped_column('sumTypeVersion')
+    creating_user            : Mapped[str]             = mapped_column('CreatingUser', default='')
+    sum_type_version         : Mapped[int]             = mapped_column('sumTypeVersion', default=0)
     tar_type_version         : Mapped[int | None]      = mapped_column('tarTypeVersion')
-    source_location          : Mapped[str]             = mapped_column('SourceLocation')
-    archive_location         : Mapped[str | None]      = mapped_column('ArchiveLocation')
-    scanner_manufacturer     : Mapped[str]             = mapped_column('ScannerManufacturer')
-    scanner_model            : Mapped[str]             = mapped_column('ScannerModel')
-    scanner_serial_number    : Mapped[str]             = mapped_column('ScannerSerialNumber')
-    scanner_software_version : Mapped[str]             = mapped_column('ScannerSoftwareVersion')
+    scanner_manufacturer     : Mapped[str]             = mapped_column('ScannerManufacturer', default='')
+    scanner_model            : Mapped[str]             = mapped_column('ScannerModel', default='')
+    scanner_serial_number    : Mapped[str]             = mapped_column('ScannerSerialNumber', default='')
+    scanner_software_version : Mapped[str]             = mapped_column('ScannerSoftwareVersion', default='')
     session_id               : Mapped[int | None]      = mapped_column('SessionID', ForeignKey('session.ID'))
-    upload_attempt           : Mapped[int]             = mapped_column('uploadAttempt')
+    upload_attempt           : Mapped[int]             = mapped_column('uploadAttempt', default=0)
     create_info              : Mapped[str | None]      = mapped_column('CreateInfo')
     acquisition_metadata     : Mapped[str]             = mapped_column('AcquisitionMetadata')
     date_sent                : Mapped[datetime | None] = mapped_column('DateSent')
-    pending_transfer         : Mapped[bool]            = mapped_column('PendingTransfer')
+    pending_transfer         : Mapped[bool]            = mapped_column('PendingTransfer', IntBool, default=False)
+
+    source_path: Mapped[Path] = mapped_column('SourceLocation', StringPath, default='')
+    """
+    The path of the source DICOM study directory from which this DICOM archive was imported.
+    """
+
+    path: Mapped[Path | None] = mapped_column('ArchiveLocation', StringPath)
+    """
+    The path of this DICOM archive relative to the LORIS DICOM archive directory.
+    """
 
     series      : Mapped[list['db_dicom_archive_series.DbDicomArchiveSeries']] \
         = relationship('DbDicomArchiveSeries', back_populates='archive')
@@ -61,3 +73,8 @@ class DbDicomArchive(Base):
         = relationship('DbMriProtocolViolatedScan', back_populates='archive')
     violations_log       : Mapped[list['db_mri_violation_log.DbMriViolationLog']] \
         = relationship('DbMriViolationLog', back_populates='archive')
+
+    mri_files: Mapped[list['db_file.DbFile']] = relationship('DbFile', back_populates='dicom_archive')
+    """
+    The volumetric MRI files (NIfTI or MINC) generated from this DICOM archive.
+    """

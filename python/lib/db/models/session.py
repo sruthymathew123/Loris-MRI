@@ -8,6 +8,7 @@ import lib.db.models.file as db_file
 import lib.db.models.project as db_project
 import lib.db.models.site as db_site
 from lib.db.base import Base
+from lib.db.decorators.true_false_bool import TrueFalseBool
 from lib.db.decorators.y_n_bool import YNBool
 
 
@@ -15,14 +16,17 @@ class DbSession(Base):
     __tablename__ = 'session'
 
     id                       : Mapped[int]             = mapped_column('ID', primary_key=True)
+    # C-BIG OVERRIDE START
+    # Remove when updating to LORIS 27
     cand_id                  : Mapped[int]             = mapped_column('CandID', ForeignKey('candidate.CandID'))
+    # C-BIG OVERRIDE END
     site_id                  : Mapped[int]             = mapped_column('CenterID', ForeignKey('psc.CenterID'))
     project_id               : Mapped[int]             = mapped_column('ProjectID', ForeignKey('Project.ProjectID'))
     visit_number             : Mapped[int | None]      = mapped_column('VisitNo')
     visit_label              : Mapped[str]             = mapped_column('Visit_label')
     cohort_id                : Mapped[int | None]      = mapped_column('CohortID')
-    submitted                : Mapped[bool]            = mapped_column('Submitted', YNBool)
-    current_stage            : Mapped[str]             = mapped_column('Current_stage')
+    submitted                : Mapped[bool]            = mapped_column('Submitted', YNBool, default=False)
+    current_stage            : Mapped[str]             = mapped_column('Current_stage', default='Not Started')
     date_stage_change        : Mapped[date | None]     = mapped_column('Date_stage_change')
     screening                : Mapped[str | None]      = mapped_column('Screening')
     date_screening           : Mapped[date | None]     = mapped_column('Date_screening')
@@ -31,23 +35,26 @@ class DbSession(Base):
     date_status_change       : Mapped[date | None]     = mapped_column('Date_status_change')
     approval                 : Mapped[str | None]      = mapped_column('Approval')
     date_approval            : Mapped[date | None]     = mapped_column('Date_approval')
-    active                   : Mapped[bool]            = mapped_column('Active', YNBool)
+    active                   : Mapped[bool]            = mapped_column('Active', YNBool, default=True)
     date_active              : Mapped[date | None]     = mapped_column('Date_active')
     registered_by            : Mapped[str | None]      = mapped_column('RegisteredBy')
-    user_id                  : Mapped[str]             = mapped_column('UserID')
+    user_id                  : Mapped[str]             = mapped_column('UserID', default='')
     date_registered          : Mapped[date | None]     = mapped_column('Date_registered')
-    test_date                : Mapped[datetime]        = mapped_column('Testdate')
-    hardcopy_request         : Mapped[str]             = mapped_column('Hardcopy_request')
+    test_date                : Mapped[datetime]        = mapped_column('Testdate', default=datetime.now)
+    hardcopy_request         : Mapped[str]             = mapped_column('Hardcopy_request', default='-')
     bvl_qc_status            : Mapped[str | None]      = mapped_column('BVLQCStatus')
     bvl_qc_type              : Mapped[str | None]      = mapped_column('BVLQCType')
     bvl_qc_exclusion         : Mapped[str | None]      = mapped_column('BVLQCExclusion')
     qcd                      : Mapped[str | None]      = mapped_column('QCd')
+    # C-BIG OVERRIDE START
+    # Remove when updating to LORIS 29
     scan_done                : Mapped[bool | None]     = mapped_column('Scan_done', YNBool)
-    mri_qc_status            : Mapped[str]             = mapped_column('MRIQCStatus')
-    mri_qc_pending           : Mapped[bool]            = mapped_column('MRIQCPending', YNBool)
+    # C-BIG OVERRIDE END
+    mri_qc_status            : Mapped[str]             = mapped_column('MRIQCStatus', default='')
+    mri_qc_pending           : Mapped[bool]            = mapped_column('MRIQCPending', YNBool, default=False)
     mri_qc_first_change_time : Mapped[datetime | None] = mapped_column('MRIQCFirstChangeTime')
     mri_qc_last_change_time  : Mapped[datetime | None] = mapped_column('MRIQCLastChangeTime')
-    mri_caveat               : Mapped[str]             = mapped_column('MRICaveat')
+    mri_caveat               : Mapped[bool]            = mapped_column('MRICaveat', TrueFalseBool, default=False)
     language_id              : Mapped[int | None]      = mapped_column('languageID')
 
     candidate : Mapped['db_candidate.DbCandidate'] = relationship('DbCandidate', back_populates='sessions')

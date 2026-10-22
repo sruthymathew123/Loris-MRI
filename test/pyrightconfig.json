@@ -1,0 +1,13 @@
+{
+    "include": ["../python"],
+    "exclude": ["../python/loris_ephys_chunker/protocol_buffers"],
+    "typeCheckingMode": "off",
+    "reportDeprecated": "warning",
+    "reportAbstractUsage": "error",
+    "reportInvalidTypeForm": "error",
+    "reportMissingImports": "error",
+    "reportUnboundVariable": "error",
+    "reportUnnecessaryIsInstance": "error",
+    "reportUnusedExcept": "error",
+    "reportUnusedExpression": "error"
+}

@@ -1,6 +1,6 @@
 """This class performs parameter_file related database queries and common checks"""
 
-__license__ = "GPLv3"
+from typing_extensions import deprecated
 
 
 class ParameterFile:
@@ -33,11 +33,14 @@ class ParameterFile:
         self.db = db
         self.verbose = verbose
 
+    @deprecated('Use `lib.imaging_lib.file_parameter.register_mri_file_parameter` instead.')
     def insert_parameter_file(self, field_value_dict):
         """
-        Inserts a row into the parameter_file table based on fields/values dictionary provided to the function.
+        Inserts a row into the parameter_file table based on fields/values dictionary provided to
+        the function.
 
-        :param field_value_dict: dictionary where the parameter_file field name are keys and values to insert
+        :param field_value_dict: dictionary where the parameter_file field name are keys and values
+                                 to insert
                                  are in the dictionary values
          :type field_value_dict: dict
         """

@@ -1,5 +1,5 @@
 **/__pycache__/*
 *.pyc
 .loris_mri/
-python_virtualenvs/
+.venv/
 !.loris_mri/prod

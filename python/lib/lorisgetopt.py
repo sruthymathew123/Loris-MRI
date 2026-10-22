@@ -4,15 +4,15 @@ import os
 import sys
 
 import lib.exitcode
-import lib.utilities
 from lib.aws_s3 import AwsS3
+from lib.config_file import load_config
 from lib.database import Database
 from lib.database_lib.config import Config
-
-__license__ = "GPLv3"
+from lib.make_env import make_env
 
 
 class LorisGetOpt:
+    # ruff:ignore[doc-line-too-long]
     """
     This class will handle GetOpt functions for scripts to be run.
 
@@ -33,12 +33,11 @@ class LorisGetOpt:
         "usage  : example.py -p <profile> -f <file_path> ...\n\n"
 
         "options: \n"
-        "\t-p, --profile   : Name of the python database config file in dicom-archive/.loris_mri\n"
+        "\t-p, --profile   : Name of the python database config file in config\n"
         "\t-n, --file_path : Absolute file path to process\n"
         "\t-v, --verbose   : If set, be verbose\n\n"
 
         "required options are: \n"
-        "\t--profile\n"
         "\t--file_path\n"
     )
 
@@ -83,24 +82,33 @@ class LorisGetOpt:
         self.populate_options_dict_values(opts)
         self.check_required_options_are_set()
         self.load_config_file()
-        self.tmp_dir = lib.utilities.create_processing_tmp_dir(script_name)
 
-        # ---------------------------------------------------------------------------------------------
+        # Create the environment object using the provided arguments.
+        self.env = make_env(
+            self.script_name,
+            self.options_dict,
+            self.config_info,
+            self.options_dict['verbose']['value'],
+        )
+
+        self.tmp_dir = self.env.tmp_dir_path
+
+        # ------------------------------------------------------------------------------------------
         # Establish database connection
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         self.config_file = self.config_info
         self.verbose = self.options_dict["verbose"]["value"]
         self.db = Database(self.config_file.mysql, self.verbose)
         self.db.connect()
 
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         # Load the Config, MRI Upload, Parameter Type and Parameter File database classes
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         self.config_db_obj = Config(self.db, self.verbose)
 
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         # Get Bucket information from Config and connect to bucket
-        # ---------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------
         s3_endpoint = self.config_db_obj.get_config("AWS_S3_Endpoint")
         s3_bucket_name = self.config_db_obj.get_config("AWS_S3_Default_Bucket")
         self.s3_obj = None
@@ -181,26 +189,7 @@ class LorisGetOpt:
         with a proper error message.
         """
 
-        profile_value = self.options_dict["profile"]["value"]
-
-        if "LORIS_CONFIG" not in os.environ.keys():
-            print("\n[ERROR   ] Environment variable 'LORIS_CONFIG' not set\n")
-            sys.exit(lib.exitcode.INVALID_ENVIRONMENT_VAR)
-
-        config_file = os.path.join(os.environ["LORIS_CONFIG"], ".loris_mri", profile_value)
-        if not config_file.endswith(".py"):
-            print(
-                f"\n[ERROR   ] {config_file} does not appear to be the python configuration file."
-                f" Try using 'database_config.py' instead.\n"
-            )
-            sys.exit(lib.exitcode.INVALID_ARG)
-
-        if os.path.isfile(config_file):
-            sys.path.append(os.path.dirname(config_file))
-            self.config_info = __import__(os.path.basename(config_file[:-3]))
-        else:
-            print(f"\n[ERROR   ] {profile_value} does not exist in {os.environ['LORIS_CONFIG']}.")
-            sys.exit(lib.exitcode.INVALID_PATH)
+        self.config_info = load_config(self.options_dict["profile"]["value"])
 
     def check_required_options_are_set(self):
         """
