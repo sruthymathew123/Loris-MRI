@@ -1,11 +1,12 @@
 from lib.config import get_data_dir_path_config
 from lib.env import Env
-from lib.import_png_dataset.args import Args
-from lib.import_png_dataset.check import check_against_database, check_environment
-from lib.import_png_dataset.insert import insert_image
-from lib.import_png_dataset.problems import ProblemLog
-from lib.import_png_dataset.submission import read_submission
 from lib.logging import log
+
+from cbig.import_png_dataset.args import Args
+from cbig.import_png_dataset.check import Resolved, check_against_database, check_environment
+from cbig.import_png_dataset.insert import insert_image
+from cbig.import_png_dataset.problems import ProblemLog
+from cbig.import_png_dataset.submission import read_submission
 
 
 def import_png_dataset(env: Env, args: Args):
@@ -17,17 +18,19 @@ def import_png_dataset(env: Env, args: Args):
     are reported and the run continues.
     """
 
+    # Exits with an error if the data directory is missing or not writable.
     data_dir_path = get_data_dir_path_config(env)
 
     log(env, f"Reading PNG submission at {args.png_dir_path}...")
 
     problems = ProblemLog()
+    resolved = Resolved()
 
-    check_environment(env, data_dir_path, args, problems)
+    check_environment(env, data_dir_path, args, resolved, problems)
 
     images = read_submission(args, problems)
 
-    resolved = check_against_database(env, images, problems)
+    check_against_database(env, images, resolved, problems)
 
     # Exits with the full report if anything found was an error.
     problems.report(env, args.png_dir_path, len(images))

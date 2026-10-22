@@ -24,6 +24,7 @@ dependencies = [
     "scipy",
     "sqlalchemy>=2.0.0",
     "typing-extensions",
+    "cbig                 @ {root:uri}/python/cbig",
     "loris-bids-importer  @ {root:uri}/python/loris_bids_importer",
     "loris-bids-utils     @ {root:uri}/python/loris_bids_utils",
     "loris-dicom-importer @ {root:uri}/python/loris_dicom_importer",
@@ -52,9 +53,10 @@ packages = [
 ]
 
 [tool.uv.workspace]
-members = ["python/loris_*"]
+members = ["python/cbig", "python/loris_*"]
 
 [tool.uv.sources]
+cbig                 = { workspace = true }
 loris_bids_importer  = { workspace = true }
 loris_bids_utils     = { workspace = true }
 loris_dicom_importer = { workspace = true }

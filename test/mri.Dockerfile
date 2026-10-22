@@ -82,7 +82,7 @@ COPY . .
 # First, install the main LORIS package and all its dependencies.
 # Then, iterate and re-install each LORIS subpackage in editable mode.
 RUN pip install --no-cache-dir --editable .[dev] && \
-    for pkg in python/loris_*; do \
+    for pkg in python/cbig python/loris_*; do \
         pip install --no-cache-dir --no-deps --editable "$pkg"; \
     done
 

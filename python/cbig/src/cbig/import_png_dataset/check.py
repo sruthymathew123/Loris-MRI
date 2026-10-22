@@ -1,19 +1,22 @@
 import getpass
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from lib.db.models.candidate import DbCandidate
+from lib.db.models.imaging_file_type import DbImagingFileType
 from lib.db.models.mri_scan_type import DbMriScanType
 from lib.db.models.session import DbSession
 from lib.db.queries.candidate import try_get_candidate_with_psc_id
-from lib.db.queries.imaging_file_type import get_all_imaging_file_types
+from lib.db.queries.imaging_file_type import try_get_imaging_file_type_with_name
 from lib.db.queries.mri_scan_type import try_get_mri_scan_type_with_name
 from lib.db.queries.session import try_get_session_with_cand_id_visit_label
 from lib.db.queries.visit import try_get_visit_with_visit_label
 from lib.env import Env
-from lib.import_png_dataset.args import Args
-from lib.import_png_dataset.problems import ProblemLog
-from lib.import_png_dataset.submission import PngImage
+
+from cbig.import_png_dataset.args import Args
+from cbig.import_png_dataset.problems import ProblemLog
+from cbig.import_png_dataset.submission import PngImage
 
 PNG_FILE_TYPE = 'png'
 
@@ -24,31 +27,37 @@ class Resolved:
     The database objects a submission refers to, each looked up once.
     """
 
-    candidates:     dict[str, DbCandidate | None]           = field(default_factory=dict)
-    sessions:       dict[tuple[str, str], DbSession | None] = field(default_factory=dict)
-    mri_scan_types: dict[str, DbMriScanType | None]         = field(default_factory=dict)
-    known_visits:   dict[str, bool]                         = field(default_factory=dict)
+    file_type: DbImagingFileType | None = None
+
+    candidates: dict[str, DbCandidate | None] = field(
+        default_factory=dict[str, DbCandidate | None])
+
+    sessions: dict[tuple[str, str], DbSession | None] = field(
+        default_factory=dict[tuple[str, str], DbSession | None])
+
+    mri_scan_types: dict[str, DbMriScanType | None] = field(
+        default_factory=dict[str, DbMriScanType | None])
+
+    known_visits: dict[str, bool] = field(
+        default_factory=dict[str, bool])
 
 
-def check_environment(env: Env, data_dir_path: str, args: Args, problems: ProblemLog):
+def check_environment(env: Env, data_dir_path: Path, args: Args, resolved: Resolved, problems: ProblemLog):
     """
     Check the destinations and lookup tables the insertion will need.
 
     Done first, because these fail for every image equally and a submitter should
     not be told their delivery is fine only to hit a missing lookup row on the
-    first insert.
+    first insert. The data directory itself is already checked by
+    `get_data_dir_path_config`.
     """
-
-    if not os.path.isdir(data_dir_path):
-        problems.error('dataDirBasepath', f"'{data_dir_path}' is not a directory.")
-        return
 
     subdirectories = ['assembly'] + (['pic'] if args.create_pic else [])
 
     for subdirectory in subdirectories:
-        path = os.path.join(data_dir_path, subdirectory)
+        path = data_dir_path / subdirectory
 
-        if not os.path.isdir(path):
+        if not path.is_dir():
             problems.error(
                 f"{subdirectory}/",
                 f"'{path}' does not exist. It is created by imaging_install.sh.",
@@ -60,9 +69,9 @@ def check_environment(env: Env, data_dir_path: str, args: Args, problems: Proble
 
     # files.FileType is a foreign key onto ImagingFileTypes.type, so without this
     # row every insert is rejected by the constraint.
-    file_types = {file_type.type for file_type in get_all_imaging_file_types(env.db)}
+    resolved.file_type = try_get_imaging_file_type_with_name(env.db, PNG_FILE_TYPE)
 
-    if PNG_FILE_TYPE not in file_types:
+    if resolved.file_type is None:
         problems.error(
             'ImagingFileTypes',
             "no 'png' row. Add it with: INSERT INTO ImagingFileTypes (type, description)"
@@ -70,7 +79,7 @@ def check_environment(env: Env, data_dir_path: str, args: Args, problems: Proble
         )
 
 
-def check_against_database(env: Env, images: list[PngImage], problems: ProblemLog) -> Resolved:
+def check_against_database(env: Env, images: list[PngImage], resolved: Resolved, problems: ProblemLog):
     """
     Resolve every candidate, visit, session and scan type the submission names.
 
@@ -78,20 +87,16 @@ def check_against_database(env: Env, images: list[PngImage], problems: ProblemLo
     all three, rather than failing on the first and being re-run.
     """
 
-    resolved = Resolved()
-
     if problems.has_errors():
         # Resolving against the database is pointless if the submission itself is
         # malformed, and the extra messages would bury the real problems.
-        return resolved
+        return
 
     for image in images:
         _resolve_candidate(env, image, resolved, problems)
         _resolve_visit(env, image, resolved, problems)
         _resolve_session(env, image, resolved, problems)
         _resolve_scan_type(env, image, resolved, problems)
-
-    return resolved
 
 
 def _resolve_candidate(env: Env, image: PngImage, resolved: Resolved, problems: ProblemLog):
@@ -156,7 +161,7 @@ def _resolve_session(env: Env, image: PngImage, resolved: Resolved, problems: Pr
     if session is None:
         problems.error(
             f"sub-{image.psc_id}/ses-{image.visit_label}",
-            f"no active session for CandID {candidate.cand_id} with visit label"
+            f"no session for CandID {candidate.cand_id} with visit label"
             f" '{image.visit_label}'. Sessions are not created by this script and must"
             f" already exist in LORIS.",
         )
@@ -175,7 +180,7 @@ def _resolve_scan_type(env: Env, image: PngImage, resolved: Resolved, problems: 
             image.location,
             f"scan type '{image.scan_type_name}' has no entry in the mri_scan_type table."
             f" Scan types are never created by this script; add it first, or pass"
-            f" --loris_scan_type.",
+            f" --loris-scan-type.",
         )
 
     resolved.mri_scan_types[image.scan_type_name] = mri_scan_type

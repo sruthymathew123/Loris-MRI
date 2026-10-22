@@ -1,14 +1,16 @@
-import datetime
 import getpass
 import os
 import re
 from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
 
-from lib.imaging_lib.bids.dataset import BidsDataset
-from lib.import_png_dataset.args import Args
-from lib.import_png_dataset.problems import ProblemLog
-from lib.util.crypto import compute_file_md5_hash
-from lib.utilities import read_tsv_file
+from loris_bids_utils.files.participants import BidsParticipantsTsvFile
+from loris_bids_utils.tsv import BidsTsvFile, BidsTsvRow
+from loris_utils.crypto import compute_file_md5_hash
+
+from cbig.import_png_dataset.args import Args
+from cbig.import_png_dataset.problems import ProblemLog
 
 # First eight bytes of any PNG file. Checked because a renamed JPEG or a
 # truncated transfer is a common way for a submission to arrive broken, and both
@@ -19,11 +21,12 @@ PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 # type read from a file name cannot contain an underscore either, since that is
 # the separator the name is split on.
 SCAN_TYPE_FROM_FILE_NAME_REGEX = re.compile(r'^[A-Za-z0-9]+$')
-SCAN_TYPE_ARG_REGEX       = re.compile(r'^[A-Za-z0-9_]+$')
+SCAN_TYPE_ARG_REGEX            = re.compile(r'^[A-Za-z0-9_]+$')
 
-SESSIONS_TSV_NAME = 'sessions.tsv'
+PARTICIPANTS_TSV_NAME = 'participants.tsv'
+SESSIONS_TSV_NAME     = 'sessions.tsv'
 
-# Matched in full, unlike the prefix match BidsDataset uses. See _read_subjects.
+# Matched in full rather than as a prefix. See _read_subjects.
 SUBJECT_DIR_REGEX = re.compile(r'sub-([a-zA-Z0-9]+)')
 SESSION_DIR_REGEX = re.compile(r'ses-([a-zA-Z0-9]+)')
 
@@ -35,7 +38,7 @@ class SubmissionSubject:
     """
 
     label: str
-    path: str
+    path: Path
 
 
 @dataclass
@@ -45,7 +48,7 @@ class SubmissionSession:
     """
 
     label: str
-    path: str
+    path: Path
 
 
 @dataclass
@@ -55,11 +58,11 @@ class PngImage:
     against the database.
     """
 
-    path: str
+    path: Path
     psc_id: str
     visit_label: str
     scan_type_name: str
-    acq_date: str | None
+    acq_date: date | None
     md5_hash: str
     location: str
 
@@ -78,6 +81,17 @@ def _is_hidden(name: str) -> bool:
     return name.startswith('.')
 
 
+def _list_dir(dir_path: Path) -> list[Path]:
+    """
+    List the non-hidden entries of a directory, sorted by name.
+    """
+
+    return sorted(
+        (path for path in dir_path.iterdir() if not _is_hidden(path.name)),
+        key=lambda path: path.name,
+    )
+
+
 def read_submission(args: Args, problems: ProblemLog) -> list[PngImage]:
     """
     Walk the submitted directory and return the images it asks to insert.
@@ -85,34 +99,28 @@ def read_submission(args: Args, problems: ProblemLog) -> list[PngImage]:
     Nothing is resolved against the database here. This establishes what the
     submission claims to contain and checks that the directories, the TSV files
     and the images themselves agree with each other.
+
+    A PNG submission borrows the sub-/ses- naming of BIDS, but is not a BIDS
+    dataset: it has no dataset_description.json and no BIDS-valid file names. So
+    the LORIS BIDS TSV readers are used for participants.tsv and sessions.tsv,
+    but the directory walk is done here.
     """
 
-    # BidsDataset already finds the sub- and ses- directories, reads
-    # participants.tsv and validates its participant_id column, so the layout is
-    # read exactly one way across this pipeline and the BIDS importer.
-    #
-    # `validate` is False because a PNG submission is not a BIDS dataset. It
-    # borrows the sub-/ses- naming, but has no dataset_description.json and no
-    # BIDS-valid file names, so running the PyBIDS validator over it would fail
-    # on things that are not wrong here. Nothing this pipeline reads touches the
-    # PyBIDS layout in any case.
-    dataset = BidsDataset(args.png_dir_path, validate=False)
-
-    tsv_participants = _read_tsv_participants(dataset, args.png_dir_path, problems)
+    tsv_participants = _read_tsv_participants(args.png_dir_path, problems)
 
     if tsv_participants is None:
         return []
 
-    subjects = _read_subjects(dataset, args.png_dir_path, problems)
+    subjects = _read_subjects(args.png_dir_path, problems)
 
     if not subjects:
         return []
 
     _report_stray_root_entries(args.png_dir_path, problems)
 
-    for psc_id in sorted(set(tsv_participants) - {subject.label for subject in subjects}):
+    for psc_id in sorted(tsv_participants - {subject.label for subject in subjects}):
         problems.warning(
-            'participants.tsv',
+            PARTICIPANTS_TSV_NAME,
             f"row 'sub-{psc_id}' has no matching directory; nothing will be inserted"
             f" for that participant.",
         )
@@ -149,16 +157,15 @@ def read_submission(args: Args, problems: ProblemLog) -> list[PngImage]:
 #  participants.tsv
 # =============================================================================
 
-def _read_tsv_participants(
-    dataset: BidsDataset, png_dir_path: str, problems: ProblemLog,
-) -> dict[str, object] | None:
+def _read_tsv_participants(png_dir_path: Path, problems: ProblemLog) -> set[str] | None:
     """
-    Read and check participants.tsv. Returns None when the file is unusable.
+    Read and check participants.tsv. Returns the participant labels it lists,
+    without their sub- prefix, or None when the file is unusable.
     """
 
-    path = os.path.join(png_dir_path, 'participants.tsv')
+    path = png_dir_path / PARTICIPANTS_TSV_NAME
 
-    if not os.path.isfile(path):
+    if not path.is_file():
         problems.error(
             'root',
             "no participants.tsv. It lists the participants the submission is expected"
@@ -166,8 +173,8 @@ def _read_tsv_participants(
         )
         return None
 
-    if os.path.getsize(path) == 0:
-        problems.error('participants.tsv', "the file is empty.")
+    if path.stat().st_size == 0:
+        problems.error(PARTICIPANTS_TSV_NAME, "the file is empty.")
         return None
 
     # A submission saved as CSV rather than tab-separated is the single most
@@ -178,74 +185,73 @@ def _read_tsv_participants(
 
     if '\t' not in header and ',' in header:
         problems.error(
-            'participants.tsv',
+            PARTICIPANTS_TSV_NAME,
             "the header has no tab but does contain commas; the file looks"
             " comma-separated. Save it as Tab Delimited Text.",
         )
         return None
 
     try:
-        tsv_participants = dataset.tsv_participants
+        # Raises on a row without a participant_id.
+        participants_file = BidsParticipantsTsvFile(path)
     except Exception as exception:
-        problems.error('participants.tsv', f"could not be read: {exception}")
+        problems.error(PARTICIPANTS_TSV_NAME, f"could not be read: {exception}")
         return None
 
-    if not tsv_participants:
-        problems.error('participants.tsv', "the file has a header but no data rows.")
+    if not participants_file.rows:
+        problems.error(PARTICIPANTS_TSV_NAME, "the file has a header but no data rows.")
         return None
 
-    # The reader indexes rows by identifier, so a repeated row is silently
-    # collapsed. Counted from the raw file so it stays visible.
-    _check_duplicate_keys(path, 'participant_id', 'participants.tsv', problems)
+    # The participant set collapses a repeated row silently, so repeats are
+    # counted from the rows and reported.
+    _check_duplicate_values(
+        [row.participant_id for row in participants_file.rows],
+        'participant_id',
+        PARTICIPANTS_TSV_NAME,
+        problems,
+    )
 
-    return tsv_participants  # type: ignore[return-value]
+    return {row.participant_id for row in participants_file.rows}
 
 
 # =============================================================================
 #  Directories
 # =============================================================================
 
-def _read_subjects(
-    dataset: BidsDataset, png_dir_path: str, problems: ProblemLog,
-) -> list[SubmissionSubject]:
+def _read_subjects(png_dir_path: Path, problems: ProblemLog) -> list[SubmissionSubject]:
     """
     Return the participant directories, rejecting any whose name is not readable.
 
-    The directories are enumerated here rather than taken from
-    `BidsDataset.subjects`, because that property matches a name with
-    `re.match(r'sub-([a-zA-Z0-9]+)')`, which is a prefix match. A directory named
-    `sub-ARCHI_0001` yields the label `ARCHI`, and `sub-P014-B` yields `P014`,
-    with nothing to show that the rest of the name was dropped. Worse, the
-    `BidsSubject.path` it builds is derived from the truncated label, so it points
-    at a directory that does not exist.
-
-    A prefix match is the right behaviour for a BIDS dataset, where an entity is
-    followed by other entities. It is the wrong behaviour here, where the whole
-    directory name is one identifier, so the name is matched in full instead and a
-    mismatch is reported rather than silently trimmed.
+    The name is matched in full with `fullmatch`, not with the `re.match` prefix
+    match the BIDS readers use. A prefix match turns `sub-ARCHI_0001` into the
+    label `ARCHI` and `sub-P014-B` into `P014`, with nothing to show that the
+    rest of the name was dropped. That is the right behavior for a BIDS dataset,
+    where an entity is followed by other entities, and the wrong one here, where
+    the whole directory name is one identifier. A mismatch is reported rather
+    than silently trimmed.
     """
 
     subjects: list[SubmissionSubject] = []
     found_any = False
 
-    for entry in sorted(os.scandir(png_dir_path), key=lambda entry: entry.name):
-        if not entry.is_dir() or not entry.name.startswith('sub-'):
+    for path in _list_dir(png_dir_path):
+        if not path.is_dir() or not path.name.startswith('sub-'):
             continue
 
         found_any = True
 
-        match = SUBJECT_DIR_REGEX.fullmatch(entry.name)
+        match = SUBJECT_DIR_REGEX.fullmatch(path.name)
 
         if match is None:
             problems.error(
-                entry.name,
+                path.name,
                 "participant identifiers may only contain letters and numbers after the"
                 " sub- prefix. This directory cannot be read as an identifier, so"
                 " nothing in it was looked at.",
             )
             continue
 
-        subjects.append(SubmissionSubject(label=match.group(1), path=entry.path))
+        subjects.append(SubmissionSubject(label=match.group(1), path=path))
 
     if not found_any:
         problems.error('root', "no sub- directory found.")
@@ -265,27 +271,27 @@ def _read_sessions(subject: SubmissionSubject, problems: ProblemLog) -> list[Sub
 
     sessions: list[SubmissionSession] = []
 
-    for entry in sorted(os.scandir(subject.path), key=lambda entry: entry.name):
-        if not entry.is_dir() or not entry.name.startswith('ses-'):
+    for path in _list_dir(subject.path):
+        if not path.is_dir() or not path.name.startswith('ses-'):
             continue
 
-        match = SESSION_DIR_REGEX.fullmatch(entry.name)
+        match = SESSION_DIR_REGEX.fullmatch(path.name)
 
         if match is None:
             problems.error(
-                f"sub-{subject.label}/{entry.name}",
+                f"sub-{subject.label}/{path.name}",
                 "visit directory names may only contain letters and numbers after the"
                 " ses- prefix. A LORIS visit label that contains other characters cannot"
                 " be given as a directory name; ask the ARCHIMEDES team how to submit it.",
             )
             continue
 
-        sessions.append(SubmissionSession(label=match.group(1), path=entry.path))
+        sessions.append(SubmissionSession(label=match.group(1), path=path))
 
     return sessions
 
 
-def _report_stray_root_entries(png_dir_path: str, problems: ProblemLog):
+def _report_stray_root_entries(png_dir_path: Path, problems: ProblemLog):
     """
     Warn about anything at the top level the layout does not account for.
 
@@ -296,13 +302,9 @@ def _report_stray_root_entries(png_dir_path: str, problems: ProblemLog):
     """
 
     strays = [
-        name for name in sorted(os.listdir(png_dir_path))
-        if not _is_hidden(name)
-        and name != 'participants.tsv'
-        and not (
-            name.startswith('sub-')
-            and os.path.isdir(os.path.join(png_dir_path, name))
-        )
+        path.name for path in _list_dir(png_dir_path)
+        if path.name != PARTICIPANTS_TSV_NAME
+        and not (path.name.startswith('sub-') and path.is_dir())
     ]
 
     if strays:
@@ -345,24 +347,22 @@ def _read_subject(subject: SubmissionSubject, args: Args, problems: ProblemLog) 
     images: list[PngImage] = []
 
     for session in sessions:
-        visit_label = session.label or ''
-
-        if args.session_label is not None and visit_label != args.session_label:
+        if args.session_label is not None and session.label != args.session_label:
             continue
 
         # sessions.tsv is optional, so the ses- directories are what define the
         # visits. When the file is there it supplies acquisition dates and a
         # cross-check; a directory it does not list is worth flagging, but not
         # worth refusing, since the directory is the authority.
-        if tsv_present and visit_label not in acq_dates:
+        if tsv_present and session.label not in acq_dates:
             problems.warning(
-                f"{location}/ses-{visit_label}",
+                f"{location}/ses-{session.label}",
                 "directory has no row in sessions.tsv; no acquisition date will be"
                 " recorded for it.",
             )
 
         images += _read_session(
-            session, subject.label, acq_dates.get(visit_label), args, problems
+            session, subject.label, acq_dates.get(session.label), args, problems
         )
 
     return images
@@ -370,7 +370,7 @@ def _read_subject(subject: SubmissionSubject, args: Args, problems: ProblemLog) 
 
 def _read_sessions_tsv(
     subject: SubmissionSubject, location: str, problems: ProblemLog,
-) -> tuple[dict[str, str | None] | None, bool]:
+) -> tuple[dict[str, date | None] | None, bool]:
     """
     Read one participant's sessions.tsv.
 
@@ -382,12 +382,10 @@ def _read_sessions_tsv(
     # sub-X_sessions.tsv sitting in sub-Y's directory is a copy-paste error, and
     # reading it would apply the wrong visit list to every image with nothing
     # flagged anywhere.
-    found = sorted(
-        name for name in os.listdir(subject.path)
-        if not _is_hidden(name)
-        and name.lower().endswith(SESSIONS_TSV_NAME)
-        and os.path.isfile(os.path.join(subject.path, name))
-    )
+    found = [
+        path for path in _list_dir(subject.path)
+        if path.name.lower().endswith(SESSIONS_TSV_NAME) and path.is_file()
+    ]
 
     if not found:
         # Optional, as in a BIDS dataset, so this warns rather than failing. It
@@ -406,12 +404,12 @@ def _read_sessions_tsv(
         problems.error(
             location,
             f"{len(found)} sessions files in the participant's directory"
-            f" ({', '.join(found)}); there must be at most one.",
+            f" ({', '.join(path.name for path in found)}); there must be at most one.",
         )
         return None, True
 
-    name = found[0]
-    path = os.path.join(subject.path, name)
+    path = found[0]
+    name = path.name
 
     claimed = re.fullmatch(r'sub-(.+)_sessions\.tsv', name, flags=re.IGNORECASE)
 
@@ -431,12 +429,12 @@ def _read_sessions_tsv(
             f" Reading it anyway.",
         )
 
-    if os.path.getsize(path) == 0:
+    if path.stat().st_size == 0:
         problems.error(f"{location}/{name}", "the file is empty.")
         return None, True
 
     try:
-        rows = read_tsv_file(path)
+        rows = BidsTsvFile(BidsTsvRow, path).rows
     except Exception as exception:
         problems.error(f"{location}/{name}", f"could not be read: {exception}")
         return None, True
@@ -445,23 +443,23 @@ def _read_sessions_tsv(
         problems.error(f"{location}/{name}", "the file has a header but no data rows.")
         return None, True
 
-    if 'session_id' not in rows[0]:
+    if 'session_id' not in rows[0].data:
         problems.error(
             f"{location}/{name}",
-            f"no session_id column. Columns found: {', '.join(rows[0].keys())}.",
+            f"no session_id column. Columns found: {', '.join(rows[0].data.keys())}.",
         )
         return None, True
 
-    acq_dates: dict[str, str | None] = {}
+    acq_dates: dict[str, date | None] = {}
 
     for row in rows:
-        session_id = (row.get('session_id') or '').strip()
+        session_id = (row.data.get('session_id') or '').strip()
 
         if not session_id:
             problems.error(f"{location}/{name}", "a row has an empty session_id.")
             continue
 
-        visit_label = re.sub(r'^ses-', '', session_id)
+        visit_label = session_id.removeprefix('ses-')
 
         if visit_label in acq_dates:
             problems.error(
@@ -475,13 +473,13 @@ def _read_sessions_tsv(
 
 
 def _read_acq_date(
-    row: dict[str, str], location: str, session_id: str, problems: ProblemLog,
-) -> str | None:
+    row: BidsTsvRow, location: str, session_id: str, problems: ProblemLog,
+) -> date | None:
     """
-    Return acq_date as YYYY-MM-DD, or None when it is absent or unusable.
+    Return acq_date as a date, or None when it is absent or unusable.
     """
 
-    acq_date = (row.get('acq_date') or '').strip()
+    acq_date = (row.data.get('acq_date') or '').strip()
 
     if not acq_date:
         return None
@@ -493,17 +491,17 @@ def _read_acq_date(
         return None
 
     try:
-        parsed = datetime.date.fromisoformat(acq_date)
+        parsed = date.fromisoformat(acq_date)
     except ValueError:
         problems.error(location, f"acq_date '{acq_date}' for {session_id} is not a real date.")
         return None
 
     # Not an error: a date slightly ahead of the clock can be a timezone or a
     # scheduling artifact. Worth surfacing, not worth refusing.
-    if parsed > datetime.date.today():
+    if parsed > date.today():
         problems.warning(location, f"acq_date '{acq_date}' for {session_id} is in the future.")
 
-    return acq_date
+    return parsed
 
 
 # =============================================================================
@@ -513,7 +511,7 @@ def _read_acq_date(
 def _read_session(
     session: SubmissionSession,
     psc_id: str,
-    acq_date: str | None,
+    acq_date: date | None,
     args: Args,
     problems: ProblemLog,
 ) -> list[PngImage]:
@@ -523,27 +521,22 @@ def _read_session(
 
     location = f"sub-{psc_id}/ses-{session.label}"
 
-    png_paths: list[str] = []
+    png_paths: list[Path] = []
     strays: list[str] = []
 
-    for name in sorted(os.listdir(session.path)):
-        path = os.path.join(session.path, name)
-
-        if _is_hidden(name):
-            continue
-
-        if os.path.isdir(path):
+    for path in _list_dir(session.path):
+        if path.is_dir():
             problems.warning(
                 location,
-                f"contains a subdirectory '{name}'. Images are expected directly inside"
-                f" the visit directory, and it was not searched.",
+                f"contains a subdirectory '{path.name}'. Images are expected directly"
+                f" inside the visit directory, and it was not searched.",
             )
             continue
 
-        if name.lower().endswith('.png'):
+        if path.suffix.lower() == '.png':
             png_paths.append(path)
         else:
-            strays.append(name)
+            strays.append(path.name)
 
     if strays:
         problems.warning(
@@ -559,14 +552,13 @@ def _read_session(
     images: list[PngImage] = []
 
     for path in png_paths:
-        file_name      = os.path.basename(path)
-        image_location = f"{location}/{file_name}"
+        image_location = f"{location}/{path.name}"
 
         images.append(PngImage(
             path           = path,
             psc_id         = psc_id,
-            visit_label    = session.label or '',
-            scan_type_name = _determine_scan_type(file_name, image_location, args, problems),
+            visit_label    = session.label,
+            scan_type_name = _determine_scan_type(path, image_location, args, problems),
             acq_date       = acq_date,
             md5_hash       = '',
             location       = image_location,
@@ -575,9 +567,7 @@ def _read_session(
     return images
 
 
-def _determine_scan_type(
-    file_name: str, location: str, args: Args, problems: ProblemLog,
-) -> str:
+def _determine_scan_type(path: Path, location: str, args: Args, problems: ProblemLog) -> str:
     """
     Read the scan type off the start of a file name and check its shape.
 
@@ -590,18 +580,16 @@ def _determine_scan_type(
     if args.scan_type_name is not None:
         if not SCAN_TYPE_ARG_REGEX.fullmatch(args.scan_type_name):
             problems.error(
-                '--loris_scan_type',
+                '--loris-scan-type',
                 f"'{args.scan_type_name}' contains characters that mri_scan_type names"
                 f" may not hold. Letters, numbers and underscores only.",
             )
 
         return args.scan_type_name
 
-    stem = re.sub(r'\.png$', '', file_name, flags=re.IGNORECASE)
-
     # Everything before the first underscore, or the whole stem when the file
     # name carries no sequence number.
-    scan_type_name = stem.split('_')[0]
+    scan_type_name = path.stem.split('_')[0]
 
     if not scan_type_name:
         problems.error(
@@ -639,7 +627,7 @@ def _check_images(images: list[PngImage], problems: ProblemLog):
             problems.error(image.location, f"not readable by {getpass.getuser()}.")
             continue
 
-        if os.path.getsize(image.path) == 0:
+        if image.path.stat().st_size == 0:
             problems.error(image.location, "the file is empty.")
             continue
 
@@ -670,28 +658,14 @@ def _check_images(images: list[PngImage], problems: ProblemLog):
             hashes_seen[image.md5_hash] = image.location
 
 
-def _check_duplicate_keys(path: str, column: str, location: str, problems: ProblemLog):
+def _check_duplicate_values(values: list[str], column: str, location: str, problems: ProblemLog):
     """
-    Report a repeated key in a TSV file.
-
-    The readers index rows by their identifier, so a repeated row is silently
-    collapsed and the submitter is never told which of the two was used.
+    Report a value that appears more than once in a TSV column.
     """
-
-    try:
-        rows = read_tsv_file(path)
-    except Exception:
-        # Already reported by the caller, which read the same file.
-        return
 
     seen: set[str] = set()
 
-    for row in rows:
-        value = (row.get(column) or '').strip()
-
-        if not value:
-            continue
-
+    for value in values:
         if value in seen:
             problems.error(location, f"{column} '{value}' appears more than once.")
 

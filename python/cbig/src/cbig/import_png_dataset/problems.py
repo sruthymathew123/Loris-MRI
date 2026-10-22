@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import lib.exitcode
 from lib.env import Env
@@ -34,7 +35,7 @@ class ProblemLog:
     correction.
     """
 
-    problems: list[Problem] = field(default_factory=list)
+    problems: list[Problem] = field(default_factory=list[Problem])
 
     def error(self, location: str, message: str):
         self.problems.append(Problem(ERROR, location, message))
@@ -53,7 +54,7 @@ class ProblemLog:
     def has_errors(self) -> bool:
         return any(problem.severity == ERROR for problem in self.problems)
 
-    def report(self, env: Env, png_dir_path: str, image_count: int):
+    def report(self, env: Env, png_dir_path: Path, image_count: int):
         """
         Print every problem found, then stop the run if any of them was an error.
         """
@@ -62,8 +63,8 @@ class ProblemLog:
             log(env, f"Validated {image_count} image(s). No problems found.")
             return
 
-        ordered = sorted(self.errors, key=Problem.sort_key.fget) \
-            + sorted(self.warnings, key=Problem.sort_key.fget)  # type: ignore[attr-defined]
+        ordered = sorted(self.errors, key=lambda problem: problem.sort_key) \
+            + sorted(self.warnings, key=lambda problem: problem.sort_key)
 
         lines = [
             f"  {problem.severity:<7}  {problem.location}: {problem.message}"
