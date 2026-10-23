@@ -33,15 +33,17 @@ The whole submission is validated before anything is written, and every problem 
 
 ### Output
 
-Path and name follow `move_minc`, so a PNG sits alongside the MINC files:
+PNG files are neither MINC nor BIDS, so they have their own directory in the LORIS data directory:
 
 ```
-assembly/<CandID>/<VisitLabel>/png/native/<prefix>_<CandID>_<VisitLabel>_<scan_type>_<NNN>.png
+assembly_png/<CandID>/<VisitLabel>/<CandID>_<VisitLabel>_<scan_type>_<NNN>.png
 ```
 
-where `<prefix>` is the `prefix` Config setting. The version `<NNN>` is the first one free in the `files` table and on disk, so a second delivery to the same visit never overwrites the first.
+The directory is created on the first insertion. The version `<NNN>` is the first one free in the `files` table and on disk, so a second delivery to the same visit never overwrites the first.
 
-Per image: one `files` row, `parameter_file` rows for `md5hash`, `file_blake2b_hash` and `source_filename`, and with `--create-pic` the thumbnail plus `check_pic_filename`. Re-running a delivery skips images already registered with the same hash.
+Per image: one `files` row, `parameter_file` rows for `md5hash` and `file_blake2b_hash`, and with `--create-pic` the thumbnail plus `check_pic_filename`. Re-running a delivery skips images already registered with the same hash.
+
+Each image is inserted on its own. If one fails, it is left out entirely (no `files` row, no copied file), the other images are still inserted, and the run ends with an error listing the failed images. Fix the problem and re-run: the images already inserted are skipped.
 
 ### Setup
 

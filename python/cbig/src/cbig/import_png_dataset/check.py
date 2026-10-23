@@ -20,6 +20,11 @@ from cbig.import_png_dataset.submission import PngImage
 
 PNG_FILE_TYPE = 'png'
 
+# Directory of the PNG files in the LORIS data directory. PNG files are neither
+# MINC nor BIDS, so they do not share the `assembly` or `assembly_bids`
+# directories.
+ASSEMBLY_PNG_DIR = 'assembly_png'
+
 
 @dataclass
 class Resolved:
@@ -52,20 +57,24 @@ def check_environment(env: Env, data_dir_path: Path, args: Args, resolved: Resol
     `get_data_dir_path_config`.
     """
 
-    subdirectories = ['assembly'] + (['pic'] if args.create_pic else [])
+    # The PNG directory is created on the first insertion if it does not exist
+    # yet, inside the data directory that `get_data_dir_path_config` already
+    # checked is writable.
+    assembly_png_path = data_dir_path / ASSEMBLY_PNG_DIR
 
-    for subdirectory in subdirectories:
-        path = data_dir_path / subdirectory
+    if assembly_png_path.exists() and not (assembly_png_path.is_dir() and os.access(assembly_png_path, os.W_OK)):
+        problems.error(
+            f"{ASSEMBLY_PNG_DIR}/",
+            f"'{assembly_png_path}' is not a directory writable by {getpass.getuser()}.",
+        )
 
-        if not path.is_dir():
-            problems.error(
-                f"{subdirectory}/",
-                f"'{path}' does not exist. It is created by imaging_install.sh.",
-            )
-        elif not os.access(path, os.W_OK):
-            problems.error(
-                f"{subdirectory}/", f"'{path}' is not writable by {getpass.getuser()}.",
-            )
+    if args.create_pic:
+        pic_path = data_dir_path / 'pic'
+
+        if not pic_path.is_dir():
+            problems.error('pic/', f"'{pic_path}' does not exist. It is created by imaging_install.sh.")
+        elif not os.access(pic_path, os.W_OK):
+            problems.error('pic/', f"'{pic_path}' is not writable by {getpass.getuser()}.")
 
     # files.FileType is a foreign key onto ImagingFileTypes.type, so without this
     # row every insert is rejected by the constraint.

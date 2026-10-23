@@ -2,41 +2,47 @@ import re
 import shutil
 from pathlib import Path
 
-import lib.exitcode
 from lib.db.models.file import DbFile
 from lib.db.models.session import DbSession
-from lib.db.queries.config import try_get_config_with_setting_name
 from lib.db.queries.file import try_get_file_with_hash, try_get_file_with_path
 from lib.env import Env
 from lib.imaging_lib.file import register_mri_file
 from lib.imaging_lib.file_parameter import register_mri_file_parameter, register_mri_file_parameters
-from lib.logging import log, log_error_exit, log_verbose, log_warning
+from lib.logging import log, log_verbose, log_warning
 from loris_utils.crypto import compute_file_blake2b_hash
 from PIL import Image
 
-from cbig.import_png_dataset.check import Resolved
+from cbig.import_png_dataset.check import ASSEMBLY_PNG_DIR, Resolved
 from cbig.import_png_dataset.submission import PngImage
-
-# Subdirectory under the visit directory, the PNG equivalent of the 'mri' and
-# 'pet' directories move_minc writes into.
-ASSEMBLY_SUBDIR = 'png'
 
 # Width in pixels of the pic shown in the imaging browser.
 PIC_WIDTH = 200
+
+
+class PngInsertError(Exception):
+    """
+    Raised when one image cannot be inserted. Nothing of that image is left in
+    the database or in the data directory, and the other images can still be
+    inserted.
+    """
 
 
 def insert_image(
     env: Env, data_dir_path: Path, image: PngImage, resolved: Resolved, create_pic: bool,
 ) -> bool:
     """
-    Copy and register one validated PNG image. Returns whether it was inserted.
+    Copy and register one validated PNG image. Returns whether it was inserted,
+    or raises a `PngInsertError` if it could not be.
     """
 
-    session       = resolved.sessions[image.psc_id, image.visit_label]
-    mri_scan_type = resolved.mri_scan_types[image.scan_type_name]
+    session       = resolved.sessions.get((image.psc_id, image.visit_label))
+    mri_scan_type = resolved.mri_scan_types.get(image.scan_type_name)
     file_type     = resolved.file_type
 
-    assert session is not None and file_type is not None
+    # Guaranteed by the validation, which stops the run before any insertion if
+    # one of these could not be resolved.
+    if session is None or file_type is None:
+        raise PngInsertError(f"{image.location}: the session or the png file type was not resolved.")
 
     blake2b_hash = compute_file_blake2b_hash(image.path)
 
@@ -56,33 +62,24 @@ def insert_image(
     file_rel_path = _determine_file_rel_path(env, data_dir_path, session, image.scan_type_name)
     file_path     = data_dir_path / file_rel_path
 
-    # 0o775, not 0o770: Apache serves the image for download and reads the pic
-    # for the imaging browser thumbnail, and it is not in the owning group on
-    # every install. The core pipeline leaves the mode to the umask for the same
-    # reason. A directory created 0o770 renders as a broken image with nothing
-    # logged anywhere.
-    file_path.parent.mkdir(mode=0o775, parents=True, exist_ok=True)
-
     # A copy rather than a move, so the submitted directory survives the run and
-    # can be re-ingested after a failure. The Perl pipeline moves instead,
-    # because it owns the incoming upload; here the caller does. The
-    # destination is known to be free (see _determine_file_rel_path), so
-    # nothing is ever overwritten.
+    # can be re-ingested after a failure. The destination is known to be free
+    # (see _determine_file_rel_path), so nothing is ever overwritten.
     log_verbose(env, f"Copying {image.path} to {file_path}")
     try:
+        # 0o775, not 0o770: Apache serves the image for download and reads the
+        # pic for the imaging browser thumbnail, and it is not in the owning
+        # group on every install.
+        file_path.parent.mkdir(mode=0o775, parents=True, exist_ok=True)
         shutil.copyfile(image.path, file_path)
     except OSError as exception:
-        log_error_exit(
-            env,
-            f"Could not copy {image.location} to {file_path}: {exception}",
-            lib.exitcode.COPY_FAILURE,
-        )
+        file_path.unlink(missing_ok=True)
+        raise PngInsertError(f"{image.location}: could not copy to {file_path}: {exception}") from exception
 
     # Everything from here writes to the database. The registration helpers
     # only flush, so nothing is committed until the commit below and a failure
-    # rolls back the whole image. The copy above would then be an orphan: a file
-    # in the assembly tree that no files row points at, which nothing will ever
-    # clean up. So the copy is removed before the error is raised.
+    # rolls back the whole image. The copy above would then be an orphan, so it
+    # is removed before the error is raised.
     try:
         # A PNG carries no header and no JSON sidecar, so sessions.tsv is the
         # only place an acquisition date can come from.
@@ -102,24 +99,16 @@ def insert_image(
             caveat                   = False,
         )
 
-        # source_filename preserves the name the submitter gave the image, which
-        # the rename to the assembly convention would otherwise lose.
         register_mri_file_parameters(env, file, {
             'md5hash':           image.md5_hash,
             'file_blake2b_hash': blake2b_hash,
-            'source_filename':   image.path.name,
         })
 
         env.db.commit()
     except Exception as exception:
         env.db.rollback()
         file_path.unlink(missing_ok=True)
-
-        log_error_exit(
-            env,
-            f"Could not register {image.location}: {exception}",
-            lib.exitcode.INSERT_FAILURE,
-        )
+        raise PngInsertError(f"{image.location}: could not register: {exception}") from exception
 
     log(env, f"{image.location} inserted as FileID {file.id} ({file_rel_path})")
 
@@ -131,58 +120,33 @@ def insert_image(
 
 def _determine_file_rel_path(env: Env, data_dir_path: Path, session: DbSession, scan_type_name: str) -> Path:
     """
-    Build a file path that does not collide with anything in the visit already.
+    Build a file path that does not collide with anything in the visit already:
 
-    Both the directory and the name follow the convention move_minc produces for
-    MINC files, so a PNG sits alongside them and reads the same way:
+        assembly_png/<CandID>/<VisitLabel>/<CandID>_<VisitLabel>_<scan_type>_<NNN>.png
 
-        assembly/<CandID>/<VisitLabel>/png/native/
-        <prefix>_<CandID>_<VisitLabel>_<scan_type>_<NNN>.png
-
-    where <prefix> is the 'prefix' setting from the Config module, the same
-    value move_minc uses. No hyphens anywhere: the MINC files have none, and
-    mri_scan_type names may not contain them either.
+    PNG files are neither MINC nor BIDS, so they have their own directory in the
+    data directory rather than sharing `assembly` with the MINC files.
 
     The version is incremented until the path is free both in the files table
-    and on disk, as move_minc does. Deriving it from what already exists rather
-    than from the submitted file names is what makes a second delivery to the
-    same visit safe; numbering from the input would restart at 1 and overwrite
-    the first delivery.
+    and on disk. Deriving it from what already exists rather than from the
+    submitted file names is what makes a second delivery to the same visit safe;
+    numbering from the input would restart at 1 and overwrite the first delivery.
     """
 
     cand_id     = session.candidate.cand_id
     visit_label = session.visit_label
-    prefix      = _get_prefix_config(env)
 
-    directory = Path('assembly', str(cand_id), visit_label, ASSEMBLY_SUBDIR, 'native')
+    directory = Path(ASSEMBLY_PNG_DIR, str(cand_id), visit_label)
 
     version = 1
 
     while True:
-        rel_path = directory / f"{prefix}_{cand_id}_{visit_label}_{scan_type_name}_{version:03d}.png"
+        rel_path = directory / f"{cand_id}_{visit_label}_{scan_type_name}_{version:03d}.png"
 
         if try_get_file_with_path(env.db, rel_path) is None and not (data_dir_path / rel_path).exists():
             return rel_path
 
         version += 1
-
-
-def _get_prefix_config(env: Env) -> str:
-    """
-    Read the 'prefix' setting that move_minc uses to name assembled files.
-    """
-
-    config = try_get_config_with_setting_name(env.db, 'prefix')
-
-    if config is None or config.value is None:
-        log_error_exit(
-            env,
-            "No 'prefix' configuration value found in the database. It is the same"
-            " setting the MINC insertion uses to name assembled files.",
-            lib.exitcode.MISSING_CONFIG_SETTING,
-        )
-
-    return config.value
 
 
 def _create_pic(env: Env, data_dir_path: Path, file: DbFile):

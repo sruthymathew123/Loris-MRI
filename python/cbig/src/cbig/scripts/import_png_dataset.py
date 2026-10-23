@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """Script to import a submitted directory of PNG images into LORIS."""
 
 import argparse
