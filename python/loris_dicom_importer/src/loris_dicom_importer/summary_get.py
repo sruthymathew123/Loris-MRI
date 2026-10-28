@@ -17,6 +17,10 @@ from loris_dicom_importer.summary_type import (
 )
 from loris_dicom_importer.text import read_dicom_date_none
 
+# DICOM modalities that are imported. Files of other modalities are archived as
+# other files.
+HANDLED_MODALITIES = ('MR', 'PT', 'CT')
+
 
 def get_dicom_study_summary(dicom_study_dir_path: Path, verbose: bool):
     """
@@ -44,7 +48,7 @@ def get_dicom_study_summary(dicom_study_dir_path: Path, verbose: bool):
                 print(f"Found no modality for DICOM file '{file_rel_path}'.")
                 raise pydicom.errors.InvalidDicomError
 
-            if modality != 'MR' and modality != 'PT':
+            if modality not in HANDLED_MODALITIES:
                 print(f"Found unhandled modality '{modality}' for DICOM file '{file_rel_path}'.")
                 raise pydicom.errors.InvalidDicomError
 
